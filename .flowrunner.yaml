@@ -1,0 +1,4 @@
+runner:
+  module_dir: "dist/modules"
+  workflow_dir: "dist/workflows"
+  job_parallel: true
