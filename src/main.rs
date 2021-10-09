@@ -8,7 +8,11 @@ use clap::{Arg, App, SubCommand};
 
 mod config;
 mod exec;
-mod cmd_registry;
+//mod cmd_registry;
+//mod flow;
+//mod inventory;
+//mod job;
+mod plugin;
 
 fn main() {
     let matches = App::new("flowrunner")
@@ -27,9 +31,9 @@ fn main() {
                             .short("v")
                             .multiple(true)
                             .help("Sets the level of verbosity"))
-                        .arg(Arg::with_name("module-dir")
+                        .arg(Arg::with_name("plugin-dir")
                             .short("m")
-                            .long("--module-dir")
+                            .long("--plugin-dir")
                             .help("Module directory"))
                         .arg(Arg::with_name("workflow-dir")
                             .short("w")
@@ -60,14 +64,14 @@ fn main() {
     info!("File: {:?}", config_file);
     info!("Content: {:?}", config);
 
-    let module_dir = matches.value_of("module-dir").unwrap_or("modules").to_string();
+    let plugin_dir = matches.value_of("plugin-dir").unwrap_or("plugins").to_string();
     let workflow_dir = matches.value_of("workflow-dir").unwrap_or("workflows").to_string();
 
     info!("--- Flags ---");
-    info!("Module directory: {}", module_dir);
+    info!("Module directory: {}", plugin_dir);
     info!("Workflow directory: {}", workflow_dir);
 
-    config.runner.module_dir = module_dir;
+    config.runner.plugin_dir = plugin_dir;
     config.runner.workflow_dir = workflow_dir;
 
     info!("--- Final configuration ---");

@@ -25,16 +25,26 @@ debug = true
 [workspace]
 members = [
   ".",
-#  "plugins/shell"
+  "plugins/shell"
 ]
+
+#[lib]
+#crate-type = ["dylib", "rlib"]
 
 [dependencies]
 
 # Command
 clap = "2.33.3"
 
+# Dynamic library
+dlopen = "0.1"
+dlopen_derive = "0.1"
+
 # Error
 anyhow = { version = "1.0" }
+
+# Directory / File
+glob = "0.3"
 
 # Log
 log = "0.4"

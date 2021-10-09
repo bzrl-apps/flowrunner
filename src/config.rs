@@ -11,7 +11,7 @@ pub struct Config {
 
 #[derive(Debug ,Serialize, Deserialize, Clone, PartialEq)]
 pub struct RunnerConfig {
-    pub module_dir: String,
+    pub plugin_dir: String,
     pub workflow_dir: String,
     pub job_parallel: bool
 }
@@ -31,7 +31,7 @@ mod tests {
     fn test_read_config_file() {
         let expected: Config = Config{
             runner: RunnerConfig{
-                module_dir: "dist/modules".to_string(),
+                plugin_dir: "dist/plugins".to_string(),
                 workflow_dir: "dist/workflows".to_string(),
                 job_parallel: true
             }

@@ -1,0 +1,21 @@
+[package]
+name = "shell"
+version = "0.1.0"
+authors = ["Thanh NGUYEN <thanh@uthng.me>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+flowrunner = { path = "../../" }
+
+# Error
+anyhow = { version = "1.0" }
+
+# Log
+log = "0.4"
+env_logger = "0.8"
+
+[lib]
+crate-type = ["dylib"]

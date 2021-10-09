@@ -6,14 +6,14 @@ use log::warn;
 
 pub type CmdFunc = fn(params: HashMap<String, String>) -> Result<HashMap<String, String>>;
 
-#[derive(Debug ,Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Module {
 	pub name: String,
 	pub version: String,
 	pub description: String
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Cmd {
 	pub name: String,
 	pub func: CmdFunc,

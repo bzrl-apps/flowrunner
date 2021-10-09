@@ -1,13 +1,17 @@
 use serde::{Deserialize, Serialize};
 use anyhow::Result;
+use std::collections::HashMap;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+//use crate::cmd_registry::Cmd;
+use crate::module::Module;
+
+#[derive(Clone, Serialize, Deserialize, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Status {
     Ko = 0,
     Ok = 1,
 }
 
-#[derive(Debug ,Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Job {
 	pub name: String,
 	pub hosts: String,
@@ -17,13 +21,20 @@ pub struct Job {
 	pub context: HashMap<String, String>,
 
 	pub status: Status,
-	pub result: HashMap<String, Result<HashMap<String, String>>>
+	pub result: JobResult,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct JobResult {
+    pub name: String,
+    pub tasks: HashMap<String, String>
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Task {
 	pub name: String,
-	pub cmd: Cmd,
+	pub module: Module,
 	pub params: HashMap<String, String>,
-	pub onSuccess: String,
-	pub onFailure: String
+	pub on_success: String,
+	pub on_failure: String
 }
