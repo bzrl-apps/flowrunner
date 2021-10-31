@@ -5,10 +5,12 @@ use flowrunner::plugin::Plugin;
 
 use anyhow::{Result, anyhow};
 use log::warn;
+use async_trait::async_trait;
 
 // Our plugin implementation
 struct Shell;
 
+#[async_trait]
 impl Plugin for Shell {
     fn get_name(&self) -> String {
         env!("CARGO_PKG_NAME").to_string()
@@ -22,7 +24,7 @@ impl Plugin for Shell {
         env!("CARGO_PKG_DESCRIPTION").to_string()
     }
 
-    fn func(&self, params: HashMap<String, String>) -> Result<HashMap<String, String>>{
+    async fn func(&self, params: HashMap<String, String>) -> Result<HashMap<String, String>>{
         // Handle params
         let cmd = match params.get(&"cmd".to_string()) {
             None => return Err(anyhow!("param `cmd` is not found")),
@@ -37,7 +39,7 @@ impl Plugin for Shell {
 
 #[no_mangle]
 pub fn get_plugin() -> *mut dyn Plugin {
-    println!("Running plugin Shell");
+    println!("Plugin Shell loaded!");
 
     // Return a raw pointer to an instance of our plugin
     Box::into_raw(Box::new(Shell {}))

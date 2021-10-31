@@ -1,4 +1,4 @@
 runner:
-  module_dir: "dist/modules"
+  plugin_dir: "dist/plugins"
   workflow_dir: "dist/workflows"
   job_parallel: true

@@ -32,9 +32,17 @@ members = [
 #crate-type = ["dylib", "rlib"]
 
 [dependencies]
-
 # Command
 clap = "2.33.3"
+
+# async/await
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+futures = "0.3"
+
+# Lazy static
+#once_cell = "0.1"
+lazy_static = "1.4.0"
 
 # Dynamic library
 dlopen = "0.1"

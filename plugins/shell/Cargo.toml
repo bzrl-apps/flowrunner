@@ -10,6 +10,9 @@ edition = "2018"
 
 flowrunner = { path = "../../" }
 
+# Async/await
+async-trait = "0.1"
+
 # Error
 anyhow = { version = "1.0" }
 

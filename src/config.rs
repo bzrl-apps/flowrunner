@@ -1,6 +1,9 @@
 use std::error::Error;
 use std::fs::File;
 //use std::path::Path;
+use std::sync::Mutex;
+
+use lazy_static::lazy_static;
 
 use serde::{Deserialize, Serialize};
 
@@ -11,8 +14,11 @@ pub struct Config {
 
 #[derive(Debug ,Serialize, Deserialize, Clone, PartialEq)]
 pub struct RunnerConfig {
+    #[serde(default)]
     pub plugin_dir: String,
+    #[serde(default)]
     pub workflow_dir: String,
+    #[serde(default)]
     pub job_parallel: bool
 }
 
@@ -37,8 +43,8 @@ mod tests {
             }
         };
 
-        let config =new(".flowrunner.yaml");
+        let config = new(".flowrunner.yaml").unwrap();
 
-        assert_eq!(expected, config.unwrap())
+        assert_eq!(expected, config)
     }
 }

@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate lazy_static;
 extern crate log;
 extern crate clap;
 
@@ -6,15 +8,14 @@ use env_logger::Env;
 
 use clap::{Arg, App, SubCommand};
 
+use crate::plugin::PluginRegistry;
+
 mod config;
 mod exec;
-//mod cmd_registry;
-//mod flow;
-//mod inventory;
-//mod job;
 mod plugin;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let matches = App::new("flowrunner")
                         .version(env!("CARGO_PKG_VERSION"))
                         .about("An utility helps to make automatic semantic release!")
@@ -76,11 +77,16 @@ fn main() {
 
     info!("--- Final configuration ---");
     info!("{:?}", config);
+    
+    let mut registry = PluginRegistry::new();
+    let _ = registry.load_plugins("target/debug");
+
+    //registry.spawn_plugins();
 
     match matches.subcommand() {
         ("exec", Some(exec_matches)) => {
             exec::exec_cmd(config.clone(), exec_matches);
         },
-        _ => unreachable!(),
+        _ => println!("hello"),
     }
 }
