@@ -60,9 +60,6 @@ impl PluginRegistry {
                     println!("Loading plugin: {:?}", path.display());
 
                     let p = path.display().to_string().to_owned();
-                    //Load the plugin by name from the plugins directory
-                    //let plugin_api_wrapper: Container<PluginApi> = unsafe { Container::load(p) }.unwrap();
-                    //let plugin = unsafe { Box::from_raw(plugin_api_wrapper.get_plugin()) };
                     let lib = Library::open(p).expect("Could not open the library");
                     let api = unsafe { PluginApi::load(&lib) }.expect("Could not load symboles");
                     let plugin = unsafe { Box::from_raw((api.get_plugin)()) };
@@ -87,17 +84,6 @@ impl PluginRegistry {
 
         plugin.func(params).await
     }
-    // Spawn plugins and wait for all futures
-    //pub async fn spawn_plugins(&'static self) {
-        //let mut futures = Vec::new();
-        //for (_id, plugin) in &self.plugins {
-            //futures.push(tokio::spawn(async move {
-                //let params = HashMap::new();
-                //plugin.func(params).await;
-            //}));
-        //}
-        //futures::future::join_all(futures).await;
-    //}
 }
 
 #[cfg(test)]

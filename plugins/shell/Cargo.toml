@@ -11,6 +11,7 @@ edition = "2018"
 flowrunner = { path = "../../" }
 
 # Async/await
+tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
 
 # Error
