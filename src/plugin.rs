@@ -9,6 +9,8 @@ use std::any::Any;
 use async_trait::async_trait;
 
 use std::collections::HashMap;
+use serde_json::value::Value;
+use serde_json::Map;
 
 use glob::glob;
 
@@ -24,7 +26,7 @@ pub trait Plugin {
     fn get_name(&self) -> String;
     fn get_version(&self) -> String;
     fn get_description(&self) -> String;
-    async fn func(&self, params: HashMap<String, String>) -> Result<HashMap<String, String>>;
+    async fn func(&self, params: Map<String, Value>) -> Result<Map<String, Value>>;
 }
 
 struct PluginLib {
@@ -77,7 +79,7 @@ impl PluginRegistry {
         Ok(())
     }
 
-    pub async fn exec_plugin(&self, name: &str, params: HashMap<String, String>) -> Result<HashMap<String, String>> {
+    pub async fn exec_plugin(&self, name: &str, params: Map<String, Value>) -> Result<Map<String, Value>> {
         let plugin_lib = self.plugins.get(&"shell".to_string()).unwrap();
         let api = unsafe { PluginApi::load(&plugin_lib.lib) }.expect("Could not load symboles");
         let plugin = unsafe { Box::from_raw((api.get_plugin)()) };

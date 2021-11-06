@@ -559,6 +559,8 @@ dependencies = [
  "env_logger",
  "flowrunner",
  "log",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 
