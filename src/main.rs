@@ -13,6 +13,9 @@ use crate::plugin::PluginRegistry;
 mod config;
 mod exec;
 mod plugin;
+mod flow;
+mod job;
+mod utils;
 
 #[tokio::main]
 async fn main() {
