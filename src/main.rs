@@ -80,11 +80,8 @@ async fn main() {
 
     info!("--- Final configuration ---");
     info!("{:?}", config);
-    
-    let mut registry = PluginRegistry::new();
-    let _ = registry.load_plugins("target/debug");
 
-    //registry.spawn_plugins();
+    PluginRegistry::load_plugins("target/debug");
 
     match matches.subcommand() {
         ("exec", Some(exec_matches)) => {

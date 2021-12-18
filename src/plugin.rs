@@ -3,9 +3,9 @@
 use dlopen::symbor::{Symbol, Library, SymBorApi};
 use dlopen_derive::SymBorApi;
 //use once_cell::sync::OnceCell;
-//use lazy_static::lazy_static;
+use lazy_static::lazy_static;
+use std::sync::Mutex;
 
-use std::any::Any;
 use async_trait::async_trait;
 
 use std::collections::HashMap;
@@ -15,7 +15,7 @@ use serde_json::Map;
 use glob::glob;
 
 use anyhow::Result;
-use log::warn;
+use log::info;
 
 use crate::config::Config;
 
@@ -41,42 +41,46 @@ struct PluginApi<'a> {
     get_plugin: Symbol<'a, unsafe extern fn() -> *mut dyn Plugin>,
 }
 
+lazy_static! {
+    static ref PLUGIN_REGISTRY: Mutex<PluginRegistry> = Mutex::new(PluginRegistry{
+        plugins: HashMap::new(),
+    });
+}
+
 // PluginRegistry is a registry for plugins
 pub struct PluginRegistry {
 	plugins: HashMap<String, PluginLib>
 }
 
 impl PluginRegistry {
-    pub fn new() -> Self {
-        PluginRegistry{
-            plugins: HashMap::new(),
-        }
+    pub fn get() -> &'static Mutex<Self> {
+        &PLUGIN_REGISTRY
     }
 
-    pub fn load_plugins(&mut self, dir: &str) -> Result<()> {
+    pub fn load_plugins(dir: &str) {
+        let mut pr = PLUGIN_REGISTRY.lock().unwrap();
+
         let pattern = dir.to_owned() + "/" + "*.dylib";
 
         for entry in glob(pattern.as_str()).expect("Failed to read files *.so in the specified plugin directory") {
             match entry {
                 Ok(path) => {
-                    println!("Loading plugin: {:?}", path.display());
+                    info!("Loading plugin: {:?}", path.display());
 
                     let p = path.display().to_string().to_owned();
                     let lib = Library::open(p).expect("Could not open the library");
                     let api = unsafe { PluginApi::load(&lib) }.expect("Could not load symboles");
                     let plugin = unsafe { Box::from_raw((api.get_plugin)()) };
 
-                    self.plugins.insert(plugin.get_name(), PluginLib{
+                    pr.plugins.insert(plugin.get_name(), PluginLib{
                         path: path.display().to_string(),
                         lib,
                     });
 
                 },
-                Err(e) => println!("Error to load plugin: {:?}", e),
+                Err(e) => panic!("Error to load plugin: {:?}", e),
             }
         }
-
-        Ok(())
     }
 
     pub async fn exec_plugin(&self, name: &str, params: Map<String, Value>) -> Result<Map<String, Value>> {
@@ -91,17 +95,20 @@ impl PluginRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Map;
+    use serde_json::value::Value as jsonValue;
 
     #[tokio::test]
     //#[test]
     async fn test_load_plugins() {
-        let mut registry = PluginRegistry::new();
-        let _ = registry.load_plugins("target/debug");
+        PluginRegistry::load_plugins("target/debug");
 
-        //let mut params = HashMap::<String, String>::new();
-        //params.insert("cmd".to_string(), "ls -la".to_string());
+        let registry = PluginRegistry::get().lock().unwrap();
 
-        //registry.exec_plugin("shell", params).await;
+        let mut params = Map::new();
+        params.insert("cmd".to_string(), jsonValue::String("ls -la".to_string()));
 
+        let res = registry.exec_plugin("shell", params).await.unwrap();
+        println!("{:?}", res)
     }
 }
