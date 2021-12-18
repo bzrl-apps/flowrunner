@@ -10,6 +10,8 @@ use serde_json::value::Value as jsonValue;
 use anyhow::{anyhow, Result};
 
 use crate::{job::{Task, Job, JobResult, Status}, utils};
+use crate::plugin::PluginRegistry;
+
 //use crate::inventory::Inventory;
 
 #[derive(Debug ,Serialize, Deserialize, PartialEq, Clone)]
@@ -24,7 +26,7 @@ pub struct Flow {
 	//pub inventory: Inventory,
 
     #[serde(default)]
-	pub plugin_dir: String,
+	pub remote_plugin_dir: String,
     #[serde(default)]
 	pub remote_exec_dir: String,
     #[serde(default)]
@@ -47,7 +49,7 @@ impl Default for Flow {
             name: "".to_string(),
             variables: Map::new(),
             jobs: vec![],
-            plugin_dir: "".to_string(),
+            remote_plugin_dir: "".to_string(),
             remote_exec_dir: "".to_string(),
             inventory_file: "".to_string(),
             is_on_remote: false,
@@ -59,19 +61,65 @@ impl Default for Flow {
 impl Flow {
     pub fn new_from_file(file: &str) -> Result<Flow>{
         let f = File::open(file).unwrap();
-        let mut mapping = serde_yaml::from_reader(f).unwrap();
+        let mapping = serde_yaml::from_reader(f).unwrap();
 
         parse(mapping)
     }
 
     pub fn new_from_str(content: &str) -> Result<Flow> {
-        let mut mapping: Mapping = serde_yaml::from_str(content).unwrap();
+        let mapping: Mapping = serde_yaml::from_str(content).unwrap();
 
         parse(mapping)
     }
+
+    pub fn run_all_jobs(&mut self) -> Result<()> {
+        let mut jobs = self.jobs.clone();
+
+        for (i, j) in self.jobs.iter().enumerate() {
+            info!("Executing job {}", j.name);
+
+            exec_job(&mut jobs, i)?;
+        }
+
+        self.jobs = jobs;
+
+        Ok(())
+    }
+
+    pub fn run_job(&mut self) {}
 }
 
-fn parse(mut mapping: Mapping) -> Result<Flow> {
+fn exec_job(jobs: &mut [Job], idx: usize) -> Result<()> {
+    let mut job = jobs[idx].clone();
+
+    if job.hosts == "".to_string() || job.hosts == "localhost".to_string() || job.hosts == "127.0.0.1".to_string() {
+        let _ = exec_job_local(&mut job)?;
+        jobs[idx] = job;
+
+        return Ok(());
+    }
+
+   let _ = exec_job_remote(&mut job)?;
+   jobs[idx] = job;
+
+   Ok(())
+}
+
+fn exec_job_local(job: &mut Job) -> Result<()> {
+    info!("Executing locally the job {}", job.name);
+
+
+
+    Ok(())
+}
+
+fn exec_job_remote(job: &mut Job) -> Result<()> {
+    info!("Executing remotely the job {}", job.name);
+
+    Ok(())
+}
+
+fn parse(mapping: Mapping) -> Result<Flow> {
     let mut flow = Flow::default();
 
     if let Some(s) = mapping.get(&yamlValue::String("name".to_string())) {
@@ -199,9 +247,9 @@ fn parse(mut mapping: Mapping) -> Result<Flow> {
         None => Vec::new(),
     };
 
-    if let Some(s) = mapping.get(&yamlValue::String("plugin_dir".to_string())) {
+    if let Some(s) = mapping.get(&yamlValue::String("remote_plugin_dir".to_string())) {
         if let Some(v) = s.as_str() {
-            flow.plugin_dir = v.to_string();
+            flow.remote_plugin_dir = v.to_string();
         }
     }
 
@@ -231,8 +279,6 @@ mod tests {
     use crate::job::JobResult;
 
     use super::*;
-    use std::any::Any;
-    use serde_json::Value::Array;
 
     #[test]
     fn test_new_from_str() {
@@ -387,7 +433,7 @@ jobs:
             name: "flow1".to_string(),
             variables,
             jobs,
-            plugin_dir: "".to_string(),
+            remote_plugin_dir: "".to_string(),
             remote_exec_dir: "".to_string(),
             inventory_file: "".to_string(),
             is_on_remote: false,
@@ -395,5 +441,51 @@ jobs:
         };
 
         assert_eq!(flow.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_run_all_jobs() {
+        env_logger::init();
+
+        let content = r#"
+name: flow1
+
+jobs:
+  - hosts: host1
+    tasks:
+    - shell:
+        params:
+          cmd: "echo task1"
+      name: default
+
+  - name: job2
+    tasks:
+    - shell:
+        params:
+          cmd: "echo task1"
+      on_failure: "task-3"
+    - shell:
+        params:
+          cmd: "echo task2"
+      on_success: "task-4"
+      on_failure: "task-4"
+    - shell:
+        params:
+          cmd: "echo task3"
+    - shell:
+        params:
+          cmd: "echo task4"
+
+  - name: job3
+    hosts: host3
+    tasks:
+    - shell:
+        params:
+          cmd: "echo task1"
+"#;
+
+        let mut flow =  Flow::new_from_str(content).unwrap();
+
+        flow.run_all_jobs();
     }
 }
