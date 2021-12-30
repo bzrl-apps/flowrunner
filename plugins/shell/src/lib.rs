@@ -1,16 +1,13 @@
 extern crate flowrunner;
-use flowrunner::plugin::Plugin;
+use flowrunner::plugin::{Plugin, PluginExecResult, Status};
 
 //use std::collections::HashMap;
 use serde_json::value::Value;
 use serde_json::{Map, Number};
 
-use anyhow::{Result, anyhow};
-use log::warn;
 use async_trait::async_trait;
 
 use std::process::Command;
-
 
 // Our plugin implementation
 struct Shell;
@@ -29,15 +26,26 @@ impl Plugin for Shell {
         env!("CARGO_PKG_DESCRIPTION").to_string()
     }
 
-    async fn func(&self, params: Map<String, Value>) -> Result<Map<String, Value>>{
-        let mut result: Map<String, Value> = Map::new();
+    async fn func(&self, params: Map<String, Value>) -> PluginExecResult {
+        //let mut result: Map<String, Value> = Map::new();
+        let mut result = PluginExecResult::default();
 
         // Handle params
         let args: Vec<&str> = match params.get(&"cmd".to_string()) {
-            None => return Err(anyhow!("param `cmd` is not found")),
+            None => {
+                result.status = Status::Ko;
+                result.error = "param `cmd` is not found".to_string();
+
+                return result;
+            },
             Some(c) => match c.as_str() {
                 Some(c1) => c1.split(' ').collect(),
-                None => return Err(anyhow!("cmd cannot be read")),
+                None => {
+                    result.status = Status::Ko;
+                    result.error = "cmd cannot be read".to_string();
+
+                    return result;
+                },
             }
         };
 
@@ -51,20 +59,23 @@ impl Plugin for Shell {
         match output {
             Ok(o) => {
                 if o.status.success() {
-                    result.insert("rc".to_string(), Value::Number(Number::from(0)));
-                    result.insert("stdout".to_string(), Value::String(String::from_utf8(o.stdout).unwrap_or("".to_string())));
+                    result.status = Status::Ok;
+                    result.output.insert("rc".to_string(), Value::Number(Number::from(0)));
+                    result.output.insert("stdout".to_string(), Value::String(String::from_utf8(o.stdout).unwrap_or("".to_string())));
                 } else {
-                    result.insert("rc".to_string(), Value::Number(Number::from(o.status.code().unwrap_or(-1))));
-                    result.insert("stderr".to_string(), Value::String(String::from_utf8(o.stderr).unwrap_or("".to_string())));
+                    result.status = Status::Ko;
+                    result.error = String::from_utf8(o.stderr.clone()).unwrap_or("".to_string());
+                    result.output.insert("rc".to_string(), Value::Number(Number::from(o.status.code().unwrap_or(-1))));
+                    result.output.insert("stderr".to_string(), Value::String(String::from_utf8(o.stderr).unwrap_or("".to_string())));
                 }
 
-                return Ok(result);
+                return result;
             },
             Err(e) => {
-                result.insert("rc".to_string(), Value::Number(Number::from(1)));
-                result.insert("stderr".to_string(), Value::String(e.to_string()));
+                result.status = Status::Ko;
+                result.error = e.to_string();
 
-                return Ok(result);
+                return result;
             }
         }
     }
@@ -88,37 +99,40 @@ mod tests {
         let shell = Shell{};
 
         let mut params: Map<String, Value> = Map::new();
-        let mut expected: Map<String, Value> = Map::new();
+        let mut expected = PluginExecResult::default();
 
         // Case OK
         params.insert("cmd".to_string(), Value::String("echo Hello world".to_string()));
 
-        expected.insert("rc".to_string(), Value::Number(Number::from(0)));
-        expected.insert("stdout".to_string(), Value::String("Hello world\n".to_string()));
+        expected.status = Status::Ok;
+        expected.output.insert("rc".to_string(), Value::Number(Number::from(0)));
+        expected.output.insert("stdout".to_string(), Value::String("Hello world\n".to_string()));
 
-        let mut result = shell.func(params.clone()).await.unwrap();
+        let mut result = shell.func(params.clone()).await;
         assert_eq!(expected, result);
 
-        expected.clear();
+        expected.output.clear();
 
         // Case Error of execution
         params.insert("cmd".to_string(), Value::String("ls -z".to_string()));
 
-        expected.insert("rc".to_string(), Value::Number(Number::from(1)));
-        expected.insert("stderr".to_string(), Value::String("ls: illegal option -- z\nusage: ls [-@ABCFGHLOPRSTUWabcdefghiklmnopqrstuwx1%] [file ...]\n".to_string()));
+        expected.status = Status::Ko;
+        expected.error= "ls: illegal option -- z\nusage: ls [-@ABCFGHLOPRSTUWabcdefghiklmnopqrstuwx1%] [file ...]\n".to_string();
+        expected.output.insert("rc".to_string(), Value::Number(Number::from(1)));
+        expected.output.insert("stderr".to_string(), Value::String("ls: illegal option -- z\nusage: ls [-@ABCFGHLOPRSTUWabcdefghiklmnopqrstuwx1%] [file ...]\n".to_string()));
 
-        result = shell.func(params.clone()).await.unwrap();
+        result = shell.func(params.clone()).await;
         assert_eq!(expected, result);
 
-        expected.clear();
+        expected.output.clear();
 
         // Case fatal error such as command not found
         params.insert("cmd".to_string(), Value::String("hello".to_string()));
 
-        expected.insert("rc".to_string(), Value::Number(Number::from(1)));
-        expected.insert("stderr".to_string(), Value::String("No such file or directory (os error 2)".to_string()));
+        expected.status = Status::Ko;
+        expected.error = "No such file or directory (os error 2)".to_string();
 
-        result = shell.func(params.clone()).await.unwrap();
+        result = shell.func(params.clone()).await;
         assert_eq!(expected, result);
     }
 }

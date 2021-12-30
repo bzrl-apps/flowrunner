@@ -12,6 +12,7 @@ use crate::plugin::PluginRegistry;
 
 mod config;
 mod exec;
+#[macro_use]
 mod plugin;
 mod flow;
 mod job;

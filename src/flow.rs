@@ -9,8 +9,7 @@ use serde_json::value::Value as jsonValue;
 
 use anyhow::{anyhow, Result};
 
-use crate::{job::{Task, Job, JobResult, Status}, utils};
-use crate::plugin::PluginRegistry;
+use crate::{job::{Task, Job}, utils};
 
 //use crate::inventory::Inventory;
 
@@ -276,8 +275,7 @@ fn parse(mapping: Mapping) -> Result<Flow> {
 
 #[cfg(test)]
 mod tests {
-    use crate::job::JobResult;
-
+    use crate::job::Status;
     use super::*;
 
     #[test]
@@ -406,7 +404,7 @@ jobs:
             tasks: job1_tasks,
             context: Map::new(),
             status: Status::Ko,
-            result: JobResult::default(),
+            result: HashMap::new(),
         });
 
         jobs.push(Job {
@@ -416,7 +414,7 @@ jobs:
             tasks: job2_tasks,
             context: Map::new(),
             status: Status::Ko,
-            result: JobResult::default(),
+            result: HashMap::new(),
         });
 
         jobs.push(Job {
@@ -426,7 +424,7 @@ jobs:
             tasks: job3_tasks,
             context: Map::new(),
             status: Status::Ko,
-            result: JobResult::default(),
+            result: HashMap::new(),
         });
 
         let expected = Flow {
