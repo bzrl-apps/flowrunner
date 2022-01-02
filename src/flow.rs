@@ -71,13 +71,13 @@ impl Flow {
         parse(mapping)
     }
 
-    pub fn run_all_jobs(&mut self) -> Result<()> {
+    pub async fn run_all_jobs(&mut self) -> Result<()> {
         let mut jobs = self.jobs.clone();
 
         for (i, j) in self.jobs.iter().enumerate() {
             info!("Executing job {}", j.name);
 
-            exec_job(&mut jobs, i)?;
+            exec_job(&mut jobs, i).await?;
         }
 
         self.jobs = jobs;
@@ -88,11 +88,11 @@ impl Flow {
     pub fn run_job(&mut self) {}
 }
 
-fn exec_job(jobs: &mut [Job], idx: usize) -> Result<()> {
+async fn exec_job(jobs: &mut [Job], idx: usize) -> Result<()> {
     let mut job = jobs[idx].clone();
 
     if job.hosts == "".to_string() || job.hosts == "localhost".to_string() || job.hosts == "127.0.0.1".to_string() {
-        let _ = exec_job_local(&mut job)?;
+        let _ = exec_job_local(&mut job).await?;
         jobs[idx] = job;
 
         return Ok(());
@@ -104,10 +104,10 @@ fn exec_job(jobs: &mut [Job], idx: usize) -> Result<()> {
    Ok(())
 }
 
-fn exec_job_local(job: &mut Job) -> Result<()> {
+async fn exec_job_local(job: &mut Job) -> Result<()> {
     info!("Executing locally the job {}", job.name);
 
-
+    job.run(None).await?;
 
     Ok(())
 }
