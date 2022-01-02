@@ -109,7 +109,7 @@ impl Job {
         while let Some(t) = next_task.to_owned() {
             info!("Task executed: name {}, params {:?}", t.name, t.params);
 
-            let res = registry.exec_plugin(&t.name, t.params).await;
+            let res = registry.exec_plugin(&t.plugin, t.params).await;
             self.result.insert(t.name.clone(), res.clone());
 
             info!("Task result: name {}, res: {:?}",  t.name.clone(), res);
@@ -141,7 +141,7 @@ impl Job {
                 Some(t) => {
                     info!("Task executed: name {}, params {:?}", t.name, t.params);
 
-                    let res = registry.exec_plugin(&t.name, t.params).await;
+                    let res = registry.exec_plugin(&t.plugin, t.params).await;
                     self.result.insert(t.name.clone(), res.clone());
 
                     info!("Task result: name {}, res: {:?}",  t.name.clone(), res);

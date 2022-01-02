@@ -128,7 +128,11 @@ impl PluginRegistry {
     }
 
     pub async fn exec_plugin(&self, name: &str, params: Map<String, Value>) -> PluginExecResult {
-        let plugin_lib = self.plugins.get(&"shell".to_string()).unwrap();
+        let plugin_lib = match self.plugins.get(name) {
+            Some(p) => p,
+            None => return plugin_exec_result!(Status::Ko, "Plugin ".to_string() + name + " not found",),
+        };
+
         let api = unsafe { PluginApi::load(&plugin_lib.lib) }.expect("Could not load symboles");
         let plugin = unsafe { Box::from_raw((api.get_plugin)()) };
 
