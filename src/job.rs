@@ -75,16 +75,21 @@ pub struct Task {
 }
 
 impl Job {
-    pub async fn run(&mut self, tasks: &str) -> Result<()> {
+    pub async fn run(&mut self, tasks: Option<&str>) -> Result<()> {
         info!("JOB RUN STARTED: job: {}, hosts: {}", self.name, self.hosts);
         debug!("Job context: {:?}", self.context);
 
         // Check the name of all tasks indicated in taskflow
         self.check_tasks()?;
 
+        let ts = match tasks {
+            Some(s) => s,
+            None => "",
+        };
+
         // Run certain tasks given in parameter
-        if tasks != "" {
-            self.run_task_by_task(tasks).await?;
+        if ts != "" {
+            self.run_task_by_task(ts).await?;
         } else {
             // Run complete taskflow by running the first task
             self.run_all_tasks(self.start.clone()).await?;
@@ -435,7 +440,7 @@ mod tests {
 
         job.tasks = vec![task1.clone(), task2.clone(), task3.clone(), task4.clone()];
 
-        job.run("").await.unwrap();
+        job.run(None).await.unwrap();
 
         let mut expected = job_result!(
             "task-1" => plugin_exec_result!(
@@ -487,7 +492,7 @@ mod tests {
         job.result.clear();
 
         job.tasks = vec![task1.clone(), task2.clone(), task3.clone(), task4.clone()];
-        job.run("").await.unwrap();
+        job.run(None).await.unwrap();
 
         assert_eq!(expected, job.result);
 
@@ -509,7 +514,7 @@ mod tests {
         job.result.clear();
 
         job.tasks = vec![task1.clone(), task2.clone(), task3.clone(), task4.clone()];
-        job.run("").await.unwrap();
+        job.run(None).await.unwrap();
 
         assert_eq!(expected, job.result);
     }
@@ -575,7 +580,7 @@ mod tests {
 
         job.tasks = vec![task1.clone(), task2.clone(), task3.clone(), task4.clone()];
 
-        job.run("task-2,task-3").await.unwrap();
+        job.run(Some("task-2,task-3")).await.unwrap();
 
         let mut expected = job_result!(
             "task-2" => plugin_exec_result!(
@@ -610,13 +615,15 @@ mod tests {
         job.result.clear();
 
         job.tasks = vec![task1.clone(), task2.clone(), task3.clone(), task4.clone()];
-        job.run("task-1,task-4").await.unwrap();
+        job.run(Some("task-1,task-4")).await.unwrap();
 
         assert_eq!(expected, job.result);
     }
 
     #[test]
     fn test_expand_env_map() {
+        env_logger::init();
+
         let input = json!({
             "var1": "$VAR1",
             "var2": [
@@ -675,6 +682,8 @@ mod tests {
 
     #[test]
     fn test_render_task_template() {
+        env_logger::init();
+
         let vars = json!({
             "var1": "$VAR1",
             "var2": [
