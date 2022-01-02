@@ -1,11 +1,13 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
-use serde_json::value::Value;
+use serde_json::Value;
 
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 
 use log::{info, debug, error, warn};
+use envmnt::{ExpandOptions, ExpansionType};
+use tera::{Tera, Context};
 
 use crate::plugin::{PluginRegistry, PluginExecResult, Status as PluginStatus};
 
@@ -178,8 +180,105 @@ impl Job {
         None
     }
 
+    fn render_task_template(&self, task: &mut Task) -> Result<()> {
+        let mut data: Map<String, Value> = Map::new();
+
+        data.insert("context".to_string(), Value::from(self.context.clone()));
+
+        // Convert job'Vs result HashMap to serde_json Map
+        let mut job_result: Map<String, Value> = Map::new();
+
+        for (n, r) in self.result.iter() {
+            let r_value = Value::from(serde_json::to_string(r)?);
+            job_result.insert(n.to_string(), r_value);
+        }
+
+        data.insert("result".to_string(), Value::from(job_result));
+
+        expand_env_map(&mut data);
+
+        // Expand task's params
+        for (n, v) in task.params.clone().into_iter() {
+            task.params.insert(n.to_string(), render_param_template(task.name.as_str(), &n, &v, &data)?);
+        }
+
+        Ok(())
+    }
+
 }
 
+fn expand_env_map(m: &mut Map<String, Value>) {
+    for (k, v) in m.clone().into_iter() {
+        m.insert(k, expand_env_value(&v));
+    }
+}
+
+fn expand_env_value(value: &Value) -> Value {
+    let mut options = ExpandOptions::new();
+    options.expansion_type = Some(ExpansionType::Unix);
+
+    match value {
+        Value::Array(arr) => {
+            let mut v: Vec<Value> = vec![];
+            for e in arr.into_iter() {
+                let expanded_v = expand_env_value(e);
+                v.push(expanded_v);
+            }
+
+            return Value::Array(v);
+        },
+        Value::Object(map) => {
+            let mut m: Map<String, Value> = Map::new();
+            for (k, v) in map.into_iter() {
+                let expanded_v = expand_env_value(v);
+                m.insert(k.to_string(), expanded_v);
+            }
+
+            return Value::Object(m);
+        },
+        _ => Value::String(envmnt::expand(value.as_str().unwrap_or(""), Some(options))),
+    }
+}
+
+fn render_param_template(task: &str, key: &str, value: &Value, data: &Map<String, Value>) -> Result<Value> {
+    debug!("Rendering param templating: task {}, key {}, value {:?}, data {:?}", task, key, value, data);
+
+    let mut tera = Tera::default();
+    let exp_env_v = expand_env_value(value);
+
+    let context = match Context::from_value(Value::Object(data.to_owned())) {
+        Ok(c) => c,
+        Err(e) => return Err(anyhow!(e)),
+    };
+
+    match exp_env_v {
+        Value::Array(arr) => {
+            let mut v: Vec<Value> = vec![];
+            for e in arr.into_iter() {
+                let rendered_v = render_param_template(task, key, &e, data)?;
+                v.push(rendered_v);
+            }
+
+            return Ok(Value::Array(v));
+        },
+        Value::Object(map) => {
+            let mut m: Map<String, Value> = Map::new();
+            for (k, v) in map.into_iter() {
+                let rendered_v = render_param_template(task, key, &v, data)?;
+                m.insert(k.to_string(), rendered_v);
+            }
+
+            return Ok(Value::Object(m));
+        },
+        _ => {
+            match tera.render_str(exp_env_v.as_str().unwrap_or(""), &context) {
+                Ok(s) => Ok(Value::String(s)),
+                Err(e) => Err(anyhow!(e))
+            }
+        },
+    }
+
+}
 
 //impl TaskResult {
     //pub fn new() -> Self {
@@ -198,7 +297,7 @@ mod tests {
     use super::*;
     use flowrunner::plugin::Plugin;
     use serde_json::value::Value as jsonValue;
-    use serde_json::{Map, Number};
+    use serde_json::{Map, Number, json};
     use crate::plugin::PluginRegistry;
 
     #[test]
@@ -514,5 +613,138 @@ mod tests {
         job.run("task-1,task-4").await.unwrap();
 
         assert_eq!(expected, job.result);
+    }
+
+    #[test]
+    fn test_expand_env_map() {
+        let input = json!({
+            "var1": "$VAR1",
+            "var2": [
+                "1",
+                "$VAR21",
+                "3",
+            ],
+            "var3": [
+                "var31",
+                "$VAR32",
+                "var33",
+            ],
+            "var4": {
+                "var41": {
+                    "var411": "var411",
+                    "var412": "${VAR412}"
+                },
+                "var42": "var42",
+                "var43": "$VAR43"
+            }
+        });
+
+        envmnt::set("VAR1", "var1");
+        envmnt::set("VAR21", "2");
+        envmnt::set("VAR32", "var32");
+        envmnt::set("VAR412", "var412");
+        envmnt::set("VAR43", "var43");
+
+        let mut expanded_m = input.as_object().unwrap().to_owned();
+        expand_env_map(&mut expanded_m);
+
+        let expected = json!({
+            "var1": "var1",
+            "var2": [
+                "1",
+                "2",
+                "3",
+            ],
+            "var3": [
+                "var31",
+                "var32",
+                "var33",
+            ],
+            "var4": {
+                "var41": {
+                    "var411": "var411",
+                    "var412": "var412"
+                },
+                "var42": "var42",
+                "var43": "var43"
+            }
+        });
+
+        assert_eq!(expected.as_object().unwrap(), &expanded_m);
+    }
+
+    #[test]
+    fn test_render_task_template() {
+        let vars = json!({
+            "var1": "$VAR1",
+            "var2": [
+                "1",
+                "$VAR21",
+                "3",
+            ],
+            "var3": [
+                "var31",
+                "$VAR32",
+                "var33",
+            ],
+            "var4": {
+                "var41": {
+                    "var411": "var411",
+                    "var412": "${VAR412}"
+                },
+                "var42": "var42",
+                "var43": "$VAR43"
+            }
+        });
+
+        envmnt::set("VAR1", "var1");
+        envmnt::set("VAR21", "2");
+        envmnt::set("VAR32", "var32");
+        envmnt::set("VAR412", "var412");
+        envmnt::set("VAR43", "var43");
+
+        let mut job = Job {
+            name: "job-1".to_string(),
+            hosts: "localhost".to_string(),
+            start: None,
+            tasks: vec![],
+            context: Map::new(),
+            status: Status::Ko,
+            result: HashMap::new(),
+        };
+
+        let mut params_task1 = Map::new();
+        params_task1.insert("param1".to_string(), jsonValue::String("$VAR1 {{ context.variables.var1 }}".to_string()));
+        params_task1.insert("param2".to_string(), jsonValue::Array(vec![Value::String("$VAR21".to_string()), Value::String("{{ context.variables.var2.1 }}".to_string()), Value::String("3".to_string())]));
+        params_task1.insert("param3".to_string(), jsonValue::String("$VAR412 {{ context.variables.var4.var41.var412 }}".to_string()));
+
+        let mut task1 = Task {
+            name: "task-1".to_string(),
+            plugin: "shell".to_string(),
+            params: params_task1.clone(),
+            on_success: "task-2".to_string(),
+            on_failure: "task-3".to_string()
+        };
+
+        job.tasks = vec![task1.clone()];
+        job.context.insert("variables".to_string(), vars);
+
+        job.render_task_template(&mut task1).unwrap();
+
+        // Expected result
+        let mut params_expected = Map::new();
+        params_expected.insert("param1".to_string(), jsonValue::String("var1 var1".to_string()));
+        params_expected.insert("param2".to_string(), jsonValue::Array(vec![Value::String("2".to_string()), Value::String("2".to_string()), Value::String("3".to_string())]));
+        params_expected.insert("param3".to_string(), jsonValue::String("var412 var412".to_string()));
+
+        let mut expected = Task {
+            name: "task-1".to_string(),
+            plugin: "shell".to_string(),
+            params: params_expected.clone(),
+            on_success: "task-2".to_string(),
+            on_failure: "task-3".to_string()
+        };
+
+        assert_eq!(expected, task1);
     }
 }
