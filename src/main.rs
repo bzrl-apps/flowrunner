@@ -16,6 +16,7 @@ mod exec;
 mod plugin;
 mod flow;
 mod job;
+mod source;
 mod utils;
 
 #[tokio::main]

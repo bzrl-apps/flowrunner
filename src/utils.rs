@@ -1,6 +1,6 @@
 use serde_json::value::Value as jsonValue;
-use serde_json::Number;
-use serde_yaml::Value as yamlValue;
+use serde_json::{Number, Map};
+use serde_yaml::{Value as yamlValue, Mapping};
 
 use anyhow::{anyhow, Result};
 
@@ -27,6 +27,17 @@ pub fn convert_value_yaml_to_json(v: &yamlValue) -> Result<jsonValue> {
             }
 
             val = jsonValue::Array(array);
+        }
+    } else if v.is_mapping() {
+        if let Some(map) = v.as_mapping() {
+            let mut object = Map::new();
+
+            for (k, v) in map.into_iter() {
+                //let key = convert_value_yaml_to_json(k)?.as_str().ok_or(anyhow!("key cannot convert to json string"))?;
+                object.insert(convert_value_yaml_to_json(k)?.as_str().ok_or(anyhow!("key cannot convert to json string"))?.to_string(), convert_value_yaml_to_json(v)?);
+            }
+
+            val = jsonValue::Object(object);
         }
     }
 

@@ -9,7 +9,24 @@ use serde_json::value::Value as jsonValue;
 
 use anyhow::{anyhow, Result};
 
-use crate::{job::{Task, Job}, utils};
+use crate::{
+    job::{Task, Job},
+    utils,
+    source::Source,
+};
+
+#[derive(Clone, Serialize, Deserialize, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Kind {
+    Action,
+    Stream,
+}
+
+// Implement trait Default for FlowKind
+impl Default for Kind {
+    fn default() -> Self {
+        Kind::Action
+    }
+}
 
 //use crate::inventory::Inventory;
 
@@ -19,6 +36,12 @@ pub struct Flow {
     pub name: String,
     #[serde(default)]
 	pub variables:  Map<String, jsonValue>,
+
+    #[serde(default)]
+    pub kind: Kind,
+
+    #[serde(default)]
+    pub sources: Vec<Source>,
     #[serde(default)]
 	pub jobs: Vec<Job>,
     //#[serde(default)]
@@ -47,6 +70,8 @@ impl Default for Flow {
         Flow {
             name: "".to_string(),
             variables: Map::new(),
+            kind: Kind::Action,
+            sources: vec![],
             jobs: vec![],
             remote_plugin_dir: "".to_string(),
             remote_exec_dir: "".to_string(),
@@ -139,15 +164,68 @@ fn parse(mapping: Mapping) -> Result<Flow> {
         }
     }
 
+    flow.sources = match mapping.get(&yamlValue::String("sources".to_string())) {
+        Some(srcs) => {
+            match srcs.as_sequence() {
+                Some(seq) => {
+                    let mut sources: Vec<Source> = Vec::new();
+                    let mut src_count = 1;
+
+                    for src in seq.iter() {
+                        let mut s = Source::default();
+
+                        let default_srcname = "src-".to_owned() + &src_count.to_string();
+
+                        // Check name
+                        if let Some(v) = src.get(yamlValue::String("name".to_string())) {
+                            s.name = v.as_str().unwrap_or(&default_srcname).to_string();
+                        } else {
+                            s.name = default_srcname.clone();
+                        }
+
+                        // Check plugin
+                        if let Some(v) = src.get(yamlValue::String("plugin".to_string())) {
+                            s.plugin = v.as_str().unwrap_or("").to_string();
+                        }
+
+                        if s.plugin == "" {
+                            return Err(anyhow!("Plugin name can not be empty!"));
+                        }
+
+                        if let Some(v1) = src.get(yamlValue::String("params".to_string())) {
+                            let mut params = Map::new();
+
+                            if let Some(v2) = v1.as_mapping() {
+                                for (k, v) in v2.iter() {
+                                    params.insert(k.as_str().unwrap_or("").to_string(), utils::convert_value_yaml_to_json(v)?);
+                                }
+                            }
+
+                            s.params = params;
+                        }
+
+                        sources.push(s);
+
+                        src_count = src_count + 1;
+                    }
+
+                    sources
+                },
+                None => Vec::new(),
+            }
+        },
+        None => Vec::new(),
+    };
+
     flow.jobs = match mapping.get(&yamlValue::String("jobs".to_string())) {
         Some(js) => {
             match js.as_sequence() {
                 Some(seq) => {
                     let mut jobs: Vec<Job> = Vec::new();
+                    let mut job_count = 1;
 
                     for job in seq.iter() {
                         let mut j = Job::default();
-                        let mut job_count = 1;
 
                         let default_jobname = "job-".to_owned() + &job_count.to_string();
 
@@ -191,7 +269,7 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                                                 return Err(anyhow!("Plugin name can not be empty!"));
                                             }
 
-                                            if let Some(v3) = v.get(yamlValue::String("params".to_string())) {
+                                            if let Some(v3) = v.get (yamlValue::String("params".to_string())) {
                                                 let mut params = Map::new();
 
                                                 if let Some(v4) = v3.as_mapping() {
@@ -291,6 +369,30 @@ variables:
   - val41
   - val42
 
+sources:
+  - name: kafka1
+    plugin: kafka
+    params:
+      brokers:
+      - 127.0.0.1:1234
+      consumer:
+        group_id: group1
+        topics:
+        - name: topic1
+          event: event1
+        - name: topic2
+          event: event2
+        offset: earliest
+  - plugin: kafka
+    params:
+      brokers:
+      - 127.0.0.1:1234
+      consumer:
+        group_id: group2
+        topics:
+        - name: topic2
+          event: event2
+        offset: earliest
 jobs:
   - hosts: host1
     tasks:
@@ -333,6 +435,51 @@ jobs:
         variables.insert("var3".to_string(), jsonValue::Number(Number::from_f64(17.05).unwrap()));
         variables.insert("var4".to_string(), jsonValue::Array(vec![jsonValue::String("val41".to_string()), jsonValue::String("val42".to_string())]));
 
+        // sources
+        let mut params_src1 = Map::new();
+        params_src1.insert("brokers".to_string(), jsonValue::Array(vec![jsonValue::String("127.0.0.1:1234".to_string())]));
+
+        let mut params_src1_topic1 = Map::new();
+        params_src1_topic1.insert("name".to_string(), jsonValue::String("topic1".to_string()));
+        params_src1_topic1.insert("event".to_string(), jsonValue::String("event1".to_string()));
+
+        let mut params_src1_topic2 = Map::new();
+        params_src1_topic2.insert("name".to_string(), jsonValue::String("topic2".to_string()));
+        params_src1_topic2.insert("event".to_string(), jsonValue::String("event2".to_string()));
+
+        let mut params_src1_consumer = Map::new();
+        params_src1_consumer.insert("group_id".to_string(), jsonValue::String("group1".to_string()));
+        params_src1_consumer.insert("topics".to_string(), jsonValue::Array(vec![jsonValue::Object(params_src1_topic1), jsonValue::Object(params_src1_topic2)]));
+        params_src1_consumer.insert("offset".to_string(), jsonValue::String("earliest".to_string()));
+        params_src1.insert("consumer".to_string(), jsonValue::Object(params_src1_consumer));
+
+        let mut params_src2 = Map::new();
+        params_src2.insert("brokers".to_string(), jsonValue::Array(vec![jsonValue::String("127.0.0.1:1234".to_string())]));
+
+        let mut params_src2_topic2 = Map::new();
+        params_src2_topic2.insert("name".to_string(), jsonValue::String("topic2".to_string()));
+        params_src2_topic2.insert("event".to_string(), jsonValue::String("event2".to_string()));
+
+        let mut params_src2_consumer = Map::new();
+        params_src2_consumer.insert("group_id".to_string(), jsonValue::String("group2".to_string()));
+        params_src2_consumer.insert("topics".to_string(), jsonValue::Array(vec![jsonValue::Object(params_src2_topic2)]));
+        params_src2_consumer.insert("offset".to_string(), jsonValue::String("earliest".to_string()));
+        params_src2.insert("consumer".to_string(), jsonValue::Object(params_src2_consumer));
+
+        let mut sources = Vec::new();
+        sources.push(Source {
+            name: "kafka1".to_string(),
+            plugin: "kafka".to_string(),
+            params: params_src1,
+        });
+
+        sources.push(Source {
+            name: "src-2".to_string(),
+            plugin: "kafka".to_string(),
+            params: params_src2,
+        });
+
+        // Task / Job
         let mut params_task1 = Map::new();
         params_task1.insert("cmd".to_string(), jsonValue::String("echo task1".to_string()));
 
@@ -430,6 +577,8 @@ jobs:
         let expected = Flow {
             name: "flow1".to_string(),
             variables,
+            kind: Kind::Action,
+            sources,
             jobs,
             remote_plugin_dir: "".to_string(),
             remote_exec_dir: "".to_string(),
