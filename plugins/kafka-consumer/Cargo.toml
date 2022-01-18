@@ -1,5 +1,5 @@
 [package]
-name = "kafka_consumer"
+name = "builtin_kafka_consumer"
 version = "0.1.0"
 authors = ["Thanh NGUYEN <thanh@uthng.me>"]
 edition = "2021"
@@ -14,6 +14,7 @@ json_ops = { path = "../../json-ops" }
 # Async/await
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
+async-channel = "1"
 
 # Error
 anyhow = { version = "1.0" }

@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::Value;
 use serde_json::{Map, Number, json};
 
-use tokio::sync::*;
+//use tokio::sync::*;
+use async_channel::{Sender, Receiver, bounded};
+use tokio::runtime::{Handle, Runtime};
 use async_trait::async_trait;
 
 use log::{info, error, debug};
@@ -66,128 +68,18 @@ impl Plugin for KafkaConsumer {
         env!("CARGO_PKG_DESCRIPTION").to_string()
     }
 
-    //async fn func(&self, params: Map<String, Value>, rx: Option<mpsc::Sender<FlowMessage>>, _tx: Option<mpsc::Receiver<FlowMessage>>) -> PluginExecResult {
-        ////let mut result: Map<String, Value> = Map::new();
-
-        //let mut result = PluginExecResult::default();
-        //let params_cloned = params.clone();
-        //let rx_cloned = rx.clone();
-        //let mut result_cloned = result.clone();
-        //match tokio::spawn(async move {
-            //let jops_params = JsonOps::new(Value::Object(params_cloned));
-
-            //info!("{:?}", jops_params);
-            //let brokers: Vec<String> = match jops_params.get_value_e("brokers") {
-                //Ok(b) => b,
-                //Err(e) => {
-                    //result_cloned.status = Status::Ko;
-                    //result_cloned.error = e.to_string();
-
-                    //return result_cloned;
-                //},
-            //};
-
-            //let config: ConsumerConfig = match jops_params.get_value_e("consumer") {
-                //Ok(c) => c,
-                //Err(e) => {
-                    //result_cloned.status = Status::Ko;
-                    //result_cloned.error = e.to_string();
-
-                    //return result_cloned;
-                //},
-            //};
-
-            //let consumer: StreamConsumer  = match ClientConfig::new()
-                //.set("group.id", config.group_id.clone())
-                //.set("bootstrap.servers", brokers.join(","))
-                //.set("enable.partition.eof", "false")
-                //.set("session.timeout.ms", "6000")
-                //.set("enable.auto.commit", "true")
-                //.set("auto.commit.interval.ms", "1000")
-                //.set("enable.auto.offset.store", "false")
-                //.set("auto.offset.reset", config.offset.clone())
-                //.set_log_level(RDKafkaLogLevel::Debug)
-                //.create() {
-                    //Ok(c) => c,
-                    //Err(e) => {
-                        //result_cloned.status = Status::Ko;
-                        //result_cloned.error = e.to_string();
-
-                        //return result_cloned;
-                    //},
-                //};
-
-            //let topics: Vec<&str> = config.topics.iter().map(|t| t.name.as_ref()).collect();
-
-            //if let Err(e) = consumer.subscribe(&topics) {
-                //result_cloned.status = Status::Ko;
-                //result_cloned.error = e.to_string();
-
-                //return result_cloned;
-            //}
-
-            //info!("Start receving messages...");
-            //loop {
-                //match consumer.recv().await {
-                    //Err(e) => error!("Kafka error: {}", e),
-                    //Ok(m) => {
-                        //debug!("key: '{:?}', topic: {}, partition: {}, offset: {}, timestamp: {:?}",
-                            //m.key(), m.topic(), m.partition(), m.offset(), m.timestamp());
-
-                        //if let Some(headers) = m.headers() {
-                            //for i in 0..headers.count() {
-                                //let header = headers.get(i).unwrap();
-                                //debug!("Header {:#?}: {:?}", header.0, header.1);
-                            //}
-                        //}
-
-                        //match m.payload_view::<str>() {
-                            //Some(Ok(payload)) => {
-                                //debug!("payload {}", payload);
-                                //let value = json!(payload);
-
-                                //let msg = FlowMessage::Json(value);
-
-                                //if let Some(ref rx1) = rx_cloned {
-                                    //match rx1.send(msg).await {
-                                        //Ok(()) => {
-                                            //match consumer.commit_message(&m, CommitMode::Async) {
-                                                //Ok(_) => (),
-                                                //Err(e) => {
-                                                    //error!("Error while committing message: {}", e.to_string());
-                                                //}
-                                            //}
-                                        //},
-                                        //Err(e) => error!("{}", e.to_string()),
-                                    //};
-                                //}
-                            //},
-                            //Some(Err(e)) => error!("{}", e.to_string()),
-                            //None => info!("No content received from the topic"),
-                        //};
-                    //}
-                //};
-            //}
-        //}).await {
-            //Ok(r) => r,
-            //Err(e) => {
-                //result.status = Status::Ko;
-                //result.error = e.to_string();
-
-                //return result;
-            //}
-        //}
-    //}
-
-    async fn func(&self, params: Map<String, Value>, rx: Option<mpsc::Sender<FlowMessage>>, _tx: Option<mpsc::Receiver<FlowMessage>>) -> PluginExecResult {
+    async fn func(&self, params: Map<String, Value>, rt_handle: Handle, rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
         //let mut result: Map<String, Value> = Map::new();
+        env_logger::init();
+        // Create the runtime
+        let _guard = rt_handle.enter();
 
         let mut result = PluginExecResult::default();
         let params_cloned = params.clone();
         let rx_cloned = rx.clone();
         //let result_cloned = result.clone();
         match tokio::spawn(async move {
-            return run(params_cloned, rx_cloned, None).await;
+            return run(params_cloned, &rx_cloned).await;
         }).await {
             Ok(r) => r,
             Err(e) => {
@@ -200,7 +92,7 @@ impl Plugin for KafkaConsumer {
     }
 }
 
-async fn run(params: Map<String, Value>, rx: Option<mpsc::Sender<FlowMessage>>, _tx: Option<mpsc::Receiver<FlowMessage>>) -> PluginExecResult {
+async fn run(params: Map<String, Value>, rx: &Vec<Sender<FlowMessage>>) -> PluginExecResult {
     //let mut result: Map<String, Value> = Map::new();
 
     let mut result = PluginExecResult::default();
@@ -277,13 +169,19 @@ async fn run(params: Map<String, Value>, rx: Option<mpsc::Sender<FlowMessage>>, 
 
                 match m.payload_view::<str>() {
                     Some(Ok(payload)) => {
-                        debug!("payload {}", payload);
-                        let value = json!(payload);
+                        debug!("Payload received from kafka: {}", payload);
+                        let value = match serde_json::from_str(r#payload) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                error!("{}", e.to_string());
+                                continue;
+                            },
+                        };
 
                         let msg = FlowMessage::Json(value);
 
-                        if let Some(ref rx1) = rx {
-                            match rx1.send(msg).await {
+                        for rx1 in rx.iter() {
+                            match rx1.send(msg.clone()).await {
                                 Ok(()) => {
                                     match consumer.commit_message(&m, CommitMode::Async) {
                                         Ok(_) => (),
@@ -305,7 +203,7 @@ async fn run(params: Map<String, Value>, rx: Option<mpsc::Sender<FlowMessage>>, 
 }
 
 #[no_mangle]
-pub fn get_plugin() -> *mut dyn Plugin {
+pub fn get_plugin() -> *mut (dyn Plugin + Send + Sync) {
     println!("Plugin KafkaConsumer loaded!");
 
     // Return a raw pointer to an instance of our plugin
@@ -324,16 +222,17 @@ mod tests {
     //use std::time::Duration;
     use tokio::time::{sleep, Duration};
 
+    //#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     #[tokio::test]
-    //#[test]
     async fn test_func() {
-        env_logger::init();
+        //env_logger::init();
         let consumer = KafkaConsumer{};
 
-        let (tx, mut rx) = mpsc::channel::<FlowMessage>(100);
-        let mut params: Map<String, Value> = Map::new();
-        let mut expected = PluginExecResult::default();
+        let (rx, tx) = bounded::<FlowMessage>(1024);
+        let rxs = vec![rx.clone()];
+        let txs = vec![tx.clone()];
 
+        let mut params: Map<String, Value> = Map::new();
 
         let producer: FutureProducer = ClientConfig::new()
             .set("bootstrap.servers", "localhost:9092")
@@ -361,12 +260,12 @@ mod tests {
         params = value.as_object().unwrap().to_owned();
 
         tokio::spawn(async move{
-            let _ = consumer.func(params.clone(), Some(tx), None).await;
+            let _ = consumer.func(params.clone(), tokio::runtime::Handle::current(), &rxs, &vec![]).await;
         });
 
         sleep(Duration::from_millis(1000)).await;
 
-        let result = rx.recv().await.unwrap();
+        let result = txs[0].recv().await.unwrap();
 
         //println!("{:?}", msg);
         assert_eq!(FlowMessage::Json(Value::String(r#"{"message": "hello world"}"#.to_string())), result);
