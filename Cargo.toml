@@ -26,8 +26,8 @@ debug = true
 members = [
   ".",
   "json-ops",
-  "plugins/shell",
-  "plugins/kafka-consumer"
+  "plugins/builtin-shell",
+  "plugins/builtin-kafka-consumer"
 ]
 
 #[lib]
