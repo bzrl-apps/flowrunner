@@ -17,6 +17,7 @@ mod plugin;
 mod flow;
 mod job;
 mod source;
+mod message;
 mod utils;
 
 #[tokio::main]
