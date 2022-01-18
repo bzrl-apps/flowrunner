@@ -1,5 +1,5 @@
 [package]
-name = "shell"
+name = "builtin_shell"
 version = "0.1.0"
 authors = ["Thanh NGUYEN <thanh@uthng.me>"]
 edition = "2018"

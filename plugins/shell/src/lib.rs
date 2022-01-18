@@ -1,10 +1,12 @@
 extern crate flowrunner;
 use flowrunner::plugin::{Plugin, PluginExecResult, Status};
+use flowrunner::message::Message as FlowMessage;
 
 //use std::collections::HashMap;
 use serde_json::value::Value;
 use serde_json::{Map, Number};
 
+use tokio::sync::*;
 use async_trait::async_trait;
 
 use std::process::Command;
@@ -26,7 +28,7 @@ impl Plugin for Shell {
         env!("CARGO_PKG_DESCRIPTION").to_string()
     }
 
-    async fn func(&self, params: Map<String, Value>) -> PluginExecResult {
+    async fn func(&self, params: Map<String, Value>, _rx: &Vec<mpsc::Sender<FlowMessage>>, _tx: &Vec<mpsc::Receiver<FlowMessage>>) -> PluginExecResult {
         //let mut result: Map<String, Value> = Map::new();
         let mut result = PluginExecResult::default();
 
