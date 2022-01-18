@@ -24,7 +24,7 @@ mod utils;
 async fn main() {
     let matches = App::new("flowrunner")
                         .version(env!("CARGO_PKG_VERSION"))
-                        .about("An utility helps to make automatic semantic release!")
+                        .about("Flow Runner helps to run a flow simply and standalone!")
                         .setting(clap::AppSettings::TrailingVarArg)
                         .setting(clap::AppSettings::AllowLeadingHyphen)
                         .arg(Arg::with_name("config")
@@ -42,17 +42,17 @@ async fn main() {
                             .short("m")
                             .long("--plugin-dir")
                             .help("Module directory"))
-                        .arg(Arg::with_name("workflow-dir")
+                        .arg(Arg::with_name("flow-dir")
                             .short("w")
-                            .long("--worflow-dir")
-                            .help("Workflow directory"))
+                            .long("--flow-dir")
+                            .help("Flow directory"))
                         .subcommand(
                             App::new("exec")
-                                .about("Execute workflows")
-                                .arg(Arg::with_name("workflows")
-                                    .long("workflows")
+                                .about("Execute a flow given by a file")
+                                .arg(Arg::with_name("flow-file")
+                                    .long("--flow-file")
                                     .takes_value(true)
-                                    .help("List of workflows to execute, separated by semi-colon (;)")))
+                                    .help("Name of the flow file to execute")))
                         .get_matches();
 
     let log_level;
@@ -71,25 +71,28 @@ async fn main() {
     info!("File: {:?}", config_file);
     info!("Content: {:?}", config);
 
-    let plugin_dir = matches.value_of("plugin-dir").unwrap_or("plugins").to_string();
-    let workflow_dir = matches.value_of("workflow-dir").unwrap_or("workflows").to_string();
+    let plugin_dir = matches.value_of("plugin-dir").unwrap_or("plugins");
+    let flow_dir = matches.value_of("flow-dir").unwrap_or("flows");
 
     info!("--- Flags ---");
-    info!("Module directory: {}", plugin_dir);
-    info!("Workflow directory: {}", workflow_dir);
+    info!("Plugin directory: {}", plugin_dir);
+    info!("Flow directory: {}", flow_dir);
 
-    config.runner.plugin_dir = plugin_dir;
-    config.runner.workflow_dir = workflow_dir;
+    config.runner.plugin_dir = plugin_dir.clone().to_owned();
+    config.runner.flow_dir = flow_dir.clone().to_owned();
 
     info!("--- Final configuration ---");
     info!("{:?}", config);
 
-    PluginRegistry::load_plugins("target/debug");
+    PluginRegistry::load_plugins(plugin_dir).await;
 
     match matches.subcommand() {
         ("exec", Some(exec_matches)) => {
-            exec::exec_cmd(config.clone(), exec_matches);
+            match exec::exec_cmd(config.clone(), exec_matches).await {
+                Ok(()) => (),
+                Err(e) => { error!("{}", e.to_string()); },
+            }
         },
-        _ => println!("hello"),
+        _ => error!("Command not found"),
     }
 }

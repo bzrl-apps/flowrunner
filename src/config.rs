@@ -12,12 +12,12 @@ pub struct Config {
     pub runner: RunnerConfig,
 }
 
-#[derive(Debug ,Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Default, Debug ,Serialize, Deserialize, Clone, PartialEq)]
 pub struct RunnerConfig {
     #[serde(default)]
     pub plugin_dir: String,
     #[serde(default)]
-    pub workflow_dir: String,
+    pub flow_dir: String,
     #[serde(default)]
     pub job_parallel: bool
 }
@@ -38,7 +38,7 @@ mod tests {
         let expected: Config = Config{
             runner: RunnerConfig{
                 plugin_dir: "dist/plugins".to_string(),
-                workflow_dir: "dist/workflows".to_string(),
+                flow_dir: "dist/workflows".to_string(),
                 job_parallel: true
             }
         };
