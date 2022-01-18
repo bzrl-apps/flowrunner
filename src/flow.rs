@@ -1,19 +1,24 @@
 use std::collections::HashMap;
-use log::info;
+use log::{info, error};
 use std::fs::File;
 
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value as yamlValue};
-use serde_json::{Map, Number};
+use serde_json::Map;
 use serde_json::value::Value as jsonValue;
 
 use anyhow::{anyhow, Result};
+
+//use tokio::sync::mpsc::*;
+use async_channel::*;
 
 use crate::{
     job::{Task, Job},
     utils,
     source::Source,
 };
+
+use crate::message::Message as FlowMessage;
 
 #[derive(Clone, Serialize, Deserialize, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Kind {
@@ -30,7 +35,7 @@ impl Default for Kind {
 
 //use crate::inventory::Inventory;
 
-#[derive(Debug ,Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Debug ,Serialize, Deserialize, PartialEq)]
 pub struct Flow {
     #[serde(default)]
     pub name: String,
@@ -96,28 +101,178 @@ impl Flow {
         parse(mapping)
     }
 
-    pub async fn run_all_jobs(&mut self) -> Result<()> {
-        let mut jobs = self.jobs.clone();
-
-        for (i, j) in self.jobs.iter().enumerate() {
-            info!("Executing job {}", j.name);
-
-            exec_job(&mut jobs, i).await?;
+    pub async fn run(&mut self) -> Result<()> {
+        if self.jobs.len() <= 0 {
+            return Err(anyhow!("No job specified"));
         }
 
-        self.jobs = jobs;
+        match self.kind {
+            Kind::Stream => {
+                if self.sources.len() <= 0 {
+                    return Err(anyhow!("At least one source must be specified when using flow stream"));
+                }
+
+                // Create boundeds from sources to jobs according to
+                // the number of jobs. Each job will receive messages from all sources
+                let jobs = self.jobs.clone();
+                for (i, mut job) in jobs.into_iter().enumerate() {
+                    let (rx, tx) = bounded::<FlowMessage>(1024);
+                    job.tx.push(tx);
+
+                    // Report global flow settings in job context
+                    job.context.insert("variables".to_string(), jsonValue::from(self.variables.clone()));
+
+                    self.jobs[i] = job;
+
+                    let srcs = self.sources.clone();
+                    for (j, mut src) in srcs.into_iter().enumerate() {
+                        src.rx.push(rx.clone());
+                        self.sources[j] = src;
+                    }
+                }
+
+                let srcs_cloned = self.sources.clone();
+                tokio::spawn(async move {
+                    match run_all_sources(srcs_cloned).await {
+                        Ok(()) => (),
+                        Err(e) => error!("{}", e.to_string()),
+                    }
+                }).await?;
+            },
+            _ => {
+                info!("kind = Kind::Action");
+            },
+        }
+
+        let jobs_cloned = self.jobs.clone();
+        let kind_cloned = self.kind.clone();
+        let res = tokio::spawn(async move {
+            match run_all_jobs(kind_cloned, jobs_cloned).await {
+                Ok(jobs) => Ok(jobs),
+                Err(e) => Err(anyhow!(e)),
+            }
+            //run_all_jobs(kind_cloned, jobs_cloned).await?
+        }).await?;
+
+        self.jobs = match res {
+            Ok(j) => j,
+            Err(e) => return Err(anyhow!(e)),
+        };
 
         Ok(())
     }
 
-    pub fn run_job(&mut self) {}
+    //async fn run_all_sources(&mut self) -> Result<()> {
+        //let sources = self.sources.clone();
+
+        //for (i, j) in sources.iter().enumerate() {
+            //info!("Executing source {}", j.name);
+
+            //let mut src_cloned = j.clone();
+            //tokio::spawn(async move {
+                //match src_cloned.run().await {
+                    //Ok(()) => (),
+                    //Err(e) => error!("{}", e.to_string()),
+                //}
+            //}).await?;
+        //}
+
+        //Ok(())
+    //}
+
+    //async fn run_all_jobs(&mut self) -> Result<()> {
+        //let mut jobs = self.jobs.clone();
+
+        //for (i, j) in self.jobs.iter().enumerate() {
+            //info!("Executing job {}", j.name);
+
+            //self.exec_job(&mut jobs, i).await?;
+        //}
+
+        //self.jobs = jobs.to_vec();
+
+        //Ok(())
+    //}
+
+    //fn run_job(&mut self) {}
+
+    //async fn exec_job(&self, jobs: &mut [Job], idx: usize) -> Result<()> {
+        //let mut job = jobs[idx].clone();
+
+        //if job.hosts == "".to_string() || job.hosts == "localhost".to_string() || job.hosts == "127.0.0.1".to_string() {
+            //let _ = self.exec_job_local(&mut job).await?;
+            //jobs[idx] = job;
+
+            //return Ok(());
+        //}
+
+        //let _ = self.exec_job_remote(&mut job)?;
+        //jobs[idx] = job;
+
+        //Ok(())
+    //}
+
+    //async fn exec_job_local(&self, job: &mut Job) -> Result<()> {
+        //info!("Executing locally the job {}", job.name);
+
+        //// Report global flow settings in job context
+        //job.context.insert("variables".to_string(), jsonValue::from(self.variables.clone()));
+
+        //if self.kind == Kind::Stream {
+            //let mut job_cloned = job.clone();
+            //tokio::spawn(async move {
+                //match job_cloned.run(None).await {
+                    //Ok(()) => (),
+                    //Err(e) => error!("{}", e.to_string()),
+                //}
+            //}).await?;
+        //} else {
+            //job.run(None).await?;
+        //}
+
+        //Ok(())
+    //}
+
+    //fn exec_job_remote(&self, job: &mut Job) -> Result<()> {
+        //info!("Executing remotely the job {}", job.name);
+
+        //Ok(())
+    //}
 }
 
-async fn exec_job(jobs: &mut [Job], idx: usize) -> Result<()> {
+async fn run_all_sources(sources: Vec<Source>) -> Result<()> {
+    for s in sources.iter() {
+        info!("Executing source {}, nb of rx {}", s.name, s.rx.len());
+
+        let mut src_cloned = s.clone();
+        tokio::spawn(async move {
+            match src_cloned.run().await {
+                Ok(()) => (),
+                Err(e) => error!("{}", e.to_string()),
+            }
+        }).await?;
+    }
+
+    Ok(())
+}
+
+async fn run_all_jobs(kind: Kind, jobs: Vec<Job>) -> Result<Vec<Job>> {
+    let mut js = jobs.clone();
+
+    for (i, j) in jobs.iter().enumerate() {
+        info!("Executing job {}", j.name);
+
+        exec_job(kind, &mut js, i).await?;
+    }
+
+    Ok(js.to_vec())
+}
+
+async fn exec_job(kind: Kind, jobs: &mut [Job], idx: usize) -> Result<()> {
     let mut job = jobs[idx].clone();
 
     if job.hosts == "".to_string() || job.hosts == "localhost".to_string() || job.hosts == "127.0.0.1".to_string() {
-        let _ = exec_job_local(&mut job).await?;
+        let _ = exec_job_local(kind, &mut job).await?;
         jobs[idx] = job;
 
         return Ok(());
@@ -129,10 +284,20 @@ async fn exec_job(jobs: &mut [Job], idx: usize) -> Result<()> {
    Ok(())
 }
 
-async fn exec_job_local(job: &mut Job) -> Result<()> {
+async fn exec_job_local(kind: Kind, job: &mut Job) -> Result<()> {
     info!("Executing locally the job {}", job.name);
 
-    job.run(None).await?;
+    if kind == Kind::Stream {
+        let mut job_cloned = job.clone();
+        tokio::spawn(async move {
+            match job_cloned.run(None).await {
+                Ok(()) => (),
+                Err(e) => error!("{}", e.to_string()),
+            }
+        }).await?;
+    } else {
+        job.run(None).await?;
+    }
 
     Ok(())
 }
@@ -152,6 +317,14 @@ fn parse(mapping: Mapping) -> Result<Flow> {
         }
     } else {
         return Err(anyhow!("Flow name must be specified!"))
+    }
+
+    if let Some(s) = mapping.get(&yamlValue::String("kind".to_string())) {
+        if let Some(v) = s.as_str() {
+            if v == "stream" {
+                flow.kind = Kind::Stream;
+            }
+        }
     }
 
     if let Some(variables) = mapping.get(&yamlValue::String("variables".to_string())) {
@@ -353,8 +526,16 @@ fn parse(mapping: Mapping) -> Result<Flow> {
 
 #[cfg(test)]
 mod tests {
-    use crate::job::Status;
     use super::*;
+    use crate::job::Status;
+    use crate::plugin::PluginRegistry;
+    use tokio::time::{sleep, Duration};
+    use serde_json::value::Number;
+    use rdkafka::{
+        config::ClientConfig,
+        //message::{Headers, Message},
+        producer::future_producer::{FutureProducer, FutureRecord},
+    };
 
     #[test]
     fn test_new_from_str() {
@@ -471,12 +652,16 @@ jobs:
             name: "kafka1".to_string(),
             plugin: "kafka".to_string(),
             params: params_src1,
+            rx: vec![],
+            tx: vec![],
         });
 
         sources.push(Source {
             name: "src-2".to_string(),
             plugin: "kafka".to_string(),
             params: params_src2,
+            rx: vec![],
+            tx: vec![],
         });
 
         // Task / Job
@@ -552,6 +737,8 @@ jobs:
             context: Map::new(),
             status: Status::Ko,
             result: HashMap::new(),
+            rx: vec![],
+            tx: vec![],
         });
 
         jobs.push(Job {
@@ -562,6 +749,8 @@ jobs:
             context: Map::new(),
             status: Status::Ko,
             result: HashMap::new(),
+            rx: vec![],
+            tx: vec![],
         });
 
         jobs.push(Job {
@@ -572,6 +761,8 @@ jobs:
             context: Map::new(),
             status: Status::Ko,
             result: HashMap::new(),
+            rx: vec![],
+            tx: vec![],
         });
 
         let expected = Flow {
@@ -590,8 +781,8 @@ jobs:
         assert_eq!(flow.unwrap(), expected);
     }
 
-    #[test]
-    fn test_run_all_jobs() {
+    #[tokio::test]
+    async fn test_run_all_jobs() {
         env_logger::init();
 
         let content = r#"
@@ -631,8 +822,70 @@ jobs:
           cmd: "echo task1"
 "#;
 
+        let flow =  Flow::new_from_str(content).unwrap();
+
+        run_all_jobs(flow.kind.clone(), flow.jobs.clone()).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_flow_srcs_jobs() {
+        env_logger::init();
+
+        let content = r#"
+name: flow1
+
+kind: stream
+sources:
+  - name: kafka1
+    plugin: builtin_kafka_consumer
+    params:
+      brokers:
+      - localhost:9092
+      consumer:
+        group_id: group1
+        topics:
+        - name: topic1
+          event: event1
+        offset: earliest
+
+jobs:
+  - hosts: localhost
+    tasks:
+    - builtin_shell:
+        params:
+          cmd: "echo {{ context.data.message }}"
+"#;
+
         let mut flow =  Flow::new_from_str(content).unwrap();
 
-        flow.run_all_jobs();
+        PluginRegistry::load_plugins("target/debug").await;
+
+        let producer: FutureProducer = ClientConfig::new()
+            .set("bootstrap.servers", "localhost:9092")
+            .set("message.timeout.ms", "5000")
+            .create().unwrap();
+
+        let msg_bytes = r#"{"message": "hello world"}"#.as_bytes();
+        let key_bytes = r#"key1"#.as_bytes();
+
+        let produce_future = producer.send(
+            FutureRecord::to("topic1")
+                .payload(msg_bytes)
+                .key(key_bytes),
+                //.headers(OwnedHeaders::new().add("header_key", "header_value")),
+            Duration::from_secs(0),
+        );
+
+        match produce_future.await {
+            Ok(delivery) => println!("Sent delivery status: {:?}", delivery),
+            Err((e, _)) => println!("Sent eror: {:?}", e),
+        }
+
+
+        tokio::spawn(async move {
+            flow.run().await.unwrap();
+        });
+
+        sleep(Duration::from_millis(5000)).await;
     }
 }

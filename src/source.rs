@@ -1,15 +1,20 @@
-//use flowrunner::plugin::Status;
+//use crate::plugin::Status;
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use serde_json::Value;
+
+//use tokio::sync::mpsc::*;
+//use futures::lock::Mutex;
+use async_channel::*;
 
 use anyhow::{Result, anyhow};
 
 use log::{info, debug, error, warn};
 
-use crate::plugin::{PluginRegistry, PluginExecResult, Status as PluginStatus};
+use crate::plugin::{PluginRegistry, Status as PluginStatus};
+use crate::message::Message as FlowMessage;
 
-#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct Source {
     #[serde(default)]
 	pub name: String,
@@ -17,17 +22,67 @@ pub struct Source {
     pub plugin: String,
     #[serde(default)]
 	pub params: Map<String, Value>,
+    #[serde(skip_serializing, skip_deserializing)]
+	pub rx: Vec<Sender<FlowMessage>>,
+    #[serde(skip_serializing, skip_deserializing)]
+	pub tx: Vec<Receiver<FlowMessage>>
+}
+
+//impl Clone for Source {
+    //fn clone(&self) -> Self {
+        //let mut rx: Vec<Sender<FlowMessage>> = Vec::new();
+        ////let mut tx: Vec<Receiver<FlowMessage>> = Vec::new();
+
+        //for r in self.rx.iter() {
+            //rx.push(r.clone());
+        //}
+
+        ////for t in self.tx.iter() {
+            ////tx.push(t.clone());
+        ////}
+
+        //Source {
+            //name: self.name.clone(),
+            //plugin: self.plugin.clone(),
+            //params: self.params.clone(),
+            //rx,
+            //tx: vec![],
+        //}
+    //}
+//}
+
+impl PartialEq for Source {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name &&
+        self.plugin == other.plugin &&
+        self.params == other.params
+    }
 }
 
 impl Source {
     pub async fn run(&mut self) -> Result<()> {
-        info!("SOURCE RUN STARTED: name {}, plugin {}, params: {:?}", self.name, self.plugin, self.params);
+        info!("SOURCE RUN STARTED: name {}, plugin {}, params: {:?}, nb rx: {}", self.name, self.plugin, self.params, self.rx.len());
 
-        let registry = PluginRegistry::get().lock().unwrap();
+        match PluginRegistry::get_plugin(&self.plugin) {
+            Some(plugin) => {
+                //let res = plugin.func(self.params.clone(), &self.rx, &self.tx).await;
+                //if res.status == PluginStatus::Ko {
+                    //return Err(anyhow!(res.error));
+                //}
 
-        let res = registry.exec_plugin(&self.plugin, self.params.clone()).await;
-        if res.status == PluginStatus::Ko {
-            return Err(anyhow!(res.error));
+                //let mut result = PluginExecResult::default();
+                let params_cloned = self.params.clone();
+                let rx_cloned = self.rx.clone();
+                let tx_cloned = vec![];
+                //let result_cloned = result.clone();
+                tokio::spawn(async move {
+                    let res = plugin.func(params_cloned, tokio::runtime::Handle::current().clone(), &rx_cloned, &tx_cloned).await;
+                    if res.status == PluginStatus::Ko {
+                        error!("{}", res.error);
+                    }
+                });
+            },
+            None => error!("No plugin {} found", self.plugin),
         }
 
         Ok(())

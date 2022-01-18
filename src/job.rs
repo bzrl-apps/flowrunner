@@ -1,16 +1,21 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use serde_json::Value;
+use serde_json::json;
 
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use log::{info, debug, error, warn};
 use envmnt::{ExpandOptions, ExpansionType};
 use tera::{Tera, Context};
 
-use crate::plugin::{PluginRegistry, PluginExecResult, Status as PluginStatus};
+//use tokio::sync::mpsc::*;
+use async_channel::*;
 
+use crate::plugin::{PluginRegistry, PluginExecResult, Status as PluginStatus};
+use crate::message::Message as FlowMessage;
 
 #[macro_export]
 macro_rules! job_result {
@@ -40,7 +45,7 @@ impl Status {
     fn ko() -> Self { Status::Ko }
 }
 
-#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct Job {
     #[serde(default)]
 	pub name: String,
@@ -58,6 +63,11 @@ pub struct Job {
 	pub status: Status,
     #[serde(default)]
 	pub result: HashMap<String, PluginExecResult>,
+
+    #[serde(skip_serializing, skip_deserializing)]
+	pub rx: Vec<Sender<FlowMessage>>,
+    #[serde(skip_serializing, skip_deserializing)]
+	pub tx: Vec<Receiver<FlowMessage>>
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -74,6 +84,33 @@ pub struct Task {
 	pub on_failure: String
 }
 
+//impl Clone for Job {
+    //fn clone(&self) -> Self {
+        //Job {
+            //name: self.name.clone(),
+            //hosts: self.hosts.clone(),
+            //start: self.start.clone(),
+            //tasks: self.tasks.clone(),
+            //context: self.context.clone(),
+            //status: self.status.clone(),
+            //result: self.result.clone(),
+            //rx: vec![],
+            //tx: vec![],
+        //}
+    //}
+//}
+
+impl PartialEq for Job {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name &&
+        self.hosts == other.hosts &&
+        self.tasks == other.tasks &&
+        self.context == other.context &&
+        self.status == other.status &&
+        self.result == other.result
+    }
+}
+
 impl Job {
     pub async fn run(&mut self, tasks: Option<&str>) -> Result<()> {
         info!("JOB RUN STARTED: job: {}, hosts: {}", self.name, self.hosts);
@@ -87,12 +124,51 @@ impl Job {
             None => "",
         };
 
-        // Run certain tasks given in parameter
-        if ts != "" {
-            self.run_task_by_task(ts).await?;
+        if self.tx.len() > 0 {
+            loop {
+                match self.tx[0].recv().await {
+                    // Add message received as data in job context
+                    Ok(msg) => {
+                        match msg {
+                            //FlowMessage::Json(v) => {
+                                //match Value::from_str(v.to_string().as_str()) {
+                                    //Ok(m) => {
+                                        //debug!("JOB {}, msg received: {}", self.name, m);
+
+                                        //self.context.insert("data".to_string(), json!(m));
+                                    //},
+                                    //Err(e) => {
+                                        //error!("{}", e.to_string());
+                                        //continue;
+                                    //}
+                                //}
+                            //},
+                            FlowMessage::Json(v) => { self.context.insert("data".to_string(), v); },
+                            _ => {
+                                error!("Message received is not Message::Json type");
+                                continue;
+                            },
+                       }
+
+                        // Run certain tasks given in parameter
+                        if ts != "" {
+                            self.run_task_by_task(ts).await?;
+                        } else {
+                            // Run complete taskflow by running the first task
+                            self.run_all_tasks(self.start.clone()).await?;
+                        }
+                    },
+                    Err(e) => error!("{}", e.to_string()),
+                }
+            }
         } else {
-            // Run complete taskflow by running the first task
-            self.run_all_tasks(self.start.clone()).await?;
+            // Run certain tasks given in parameter
+            if ts != "" {
+                self.run_task_by_task(ts).await?;
+            } else {
+                // Run complete taskflow by running the first task
+                self.run_all_tasks(self.start.clone()).await?;
+            }
         }
 
         Ok(())
@@ -104,47 +180,56 @@ impl Job {
             None => Some(self.tasks[0].clone()),
         };
 
-        let registry = PluginRegistry::get().lock().unwrap();
         // Execute task
-        while let Some(t) = next_task.to_owned() {
+        while let Some(mut t) = next_task.to_owned() {
             info!("Task executed: name {}, params {:?}", t.name, t.params);
 
-            let res = registry.exec_plugin(&t.plugin, t.params).await;
-            self.result.insert(t.name.clone(), res.clone());
+            self.render_task_template(&mut t)?;
 
-            info!("Task result: name {}, res: {:?}",  t.name.clone(), res);
+            match PluginRegistry::get_plugin(&t.plugin) {
+                Some(plugin) => {
+                    let res = plugin.func(t.params, tokio::runtime::Handle::current(), &self.rx, &self.tx).await;
+                    self.result.insert(t.name.clone(), res.clone());
 
-            if res.status == PluginStatus::Ko {
-                // Go the task of Success if specified
-                next_task = match t.on_failure.len() {
-                    n if n <= 0 => return Err(anyhow!(res.error)),
-                    _ => self.get_task_by_name(t.on_failure.as_str()),
-                };
+                    info!("Task result: name {}, res: {:?}",  t.name.clone(), res);
 
-                continue;
+                    if res.status == PluginStatus::Ko {
+                        // Go the task of Success if specified
+                        next_task = match t.on_failure.len() {
+                            n if n <= 0 => return Err(anyhow!(res.error)),
+                            _ => self.get_task_by_name(t.on_failure.as_str()),
+                        };
+
+                        continue;
+                    }
+
+                    next_task = match t.on_success.len() {
+                        n if n > 0 => self.get_task_by_name(t.on_success.as_str()),
+                        _ => None,
+                    };
+                },
+                None => error!("No plugin found"),
             }
-
-            next_task = match t.on_success.len() {
-                n if n > 0 => self.get_task_by_name(t.on_success.as_str()),
-                _ => None,
-            };
         }
 
         Ok(())
     }
 
     async fn run_task_by_task(&mut self, tasks: &str) -> Result<()> {
-        let registry = PluginRegistry::get().lock().unwrap();
-
         for s in tasks.split(",") {
             match self.get_task_by_name(s) {
                 Some(t) => {
                     info!("Task executed: name {}, params {:?}", t.name, t.params);
 
-                    let res = registry.exec_plugin(&t.plugin, t.params).await;
-                    self.result.insert(t.name.clone(), res.clone());
+                    match PluginRegistry::get_plugin(&t.plugin) {
+                        Some(plugin) => {
+                            let res = plugin.func(t.params, tokio::runtime::Handle::current(), &self.rx, &self.tx).await;
+                            self.result.insert(t.name.clone(), res.clone());
 
-                    info!("Task result: name {}, res: {:?}",  t.name.clone(), res);
+                            info!("Task result: name {}, res: {:?}",  t.name.clone(), res);
+                        },
+                        None => error!("No plugin with the name {} found", t.name),
+                    }
                 },
                 None => warn!("Task {} not found => ignored!", s),
             }
@@ -285,22 +370,9 @@ fn render_param_template(task: &str, key: &str, value: &Value, data: &Map<String
 
 }
 
-//impl TaskResult {
-    //pub fn new() -> Self {
-        //TaskResult::default()
-    //}
-//}
-
-//impl Task {
-    //pub fn new() -> Self {
-        //Task::default()
-    //}
-//}
-//
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flowrunner::plugin::Plugin;
     use serde_json::value::Value as jsonValue;
     use serde_json::{Map, Number, json};
     use crate::plugin::PluginRegistry;
@@ -309,15 +381,9 @@ mod tests {
     fn test_check_tasks() {
         env_logger::init();
 
-        let mut job = Job {
-            name: "job-1".to_string(),
-            hosts: "host1".to_string(),
-            start: None,
-            tasks: vec![],
-            context: Map::new(),
-            status: Status::Ko,
-            result: HashMap::new(),
-        };
+        let mut job = Job::default();
+        job.name = "job-1".to_string();
+        job.hosts = "host1".to_string();
 
         let mut params_task1 = Map::new();
         params_task1.insert("cmd".to_string(), jsonValue::String("echo task1".to_string()));
@@ -382,17 +448,11 @@ mod tests {
     #[tokio::test]
     async fn test_run_all_tasks() {
         env_logger::init();
-        PluginRegistry::load_plugins("target/debug");
+        PluginRegistry::load_plugins("target/debug").await;
 
-        let mut job = Job {
-            name: "job-1".to_string(),
-            hosts: "localhost".to_string(),
-            start: None,
-            tasks: vec![],
-            context: Map::new(),
-            status: Status::Ko,
-            result: HashMap::new(),
-        };
+        let mut job = Job::default();
+        job.name = "job-1".to_string();
+        job.hosts = "localhost".to_string();
 
         let mut params_task1 = Map::new();
         params_task1.insert("cmd".to_string(), jsonValue::String("echo task1".to_string()));
@@ -522,17 +582,11 @@ mod tests {
     #[tokio::test]
     async fn test_run_task_by_task() {
         env_logger::init();
-        PluginRegistry::load_plugins("target/debug");
+        PluginRegistry::load_plugins("target/debug").await;
 
-        let mut job = Job {
-            name: "job-1".to_string(),
-            hosts: "localhost".to_string(),
-            start: None,
-            tasks: vec![],
-            context: Map::new(),
-            status: Status::Ko,
-            result: HashMap::new(),
-        };
+        let mut job = Job::default();
+        job.name = "job-1".to_string();
+        job.hosts = "localhost".to_string();
 
         let mut params_task1 = Map::new();
         params_task1.insert("cmd".to_string(), jsonValue::String("echo task1".to_string()));
@@ -712,15 +766,9 @@ mod tests {
         envmnt::set("VAR412", "var412");
         envmnt::set("VAR43", "var43");
 
-        let mut job = Job {
-            name: "job-1".to_string(),
-            hosts: "localhost".to_string(),
-            start: None,
-            tasks: vec![],
-            context: Map::new(),
-            status: Status::Ko,
-            result: HashMap::new(),
-        };
+        let mut job = Job::default();
+        job.name = "job-1".to_string();
+        job.hosts = "localhost".to_string();
 
         let mut params_task1 = Map::new();
         params_task1.insert("param1".to_string(), jsonValue::String("$VAR1 {{ context.variables.var1 }}".to_string()));

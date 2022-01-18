@@ -25,7 +25,9 @@ debug = true
 [workspace]
 members = [
   ".",
-  "plugins/shell"
+  "json-ops",
+  "plugins/shell",
+  "plugins/kafka-consumer"
 ]
 
 #[lib]
@@ -38,6 +40,7 @@ clap = "2.33.3"
 # async/await
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
+async-channel = "1"
 futures = "0.3"
 
 # Lazy static
@@ -68,3 +71,6 @@ tera = "1"
 
 # Env
 envmnt = "0.9"
+
+# Kafka
+rdkafka = { version = "0.25", features = ["default"] }

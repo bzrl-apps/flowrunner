@@ -4,6 +4,9 @@ use dlopen::symbor::{Symbol, Library, SymBorApi};
 use dlopen_derive::SymBorApi;
 //use once_cell::sync::OnceCell;
 use lazy_static::lazy_static;
+//use std::sync::Mutex;
+
+//use futures::lock::Mutex;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
@@ -13,12 +16,17 @@ use serde_json::value::Value;
 use serde_json::Map;
 use serde::{Deserialize, Serialize};
 
+//use tokio::sync::mpsc::*;
+use async_channel::{Sender, Receiver};
+
 use glob::glob;
+use std::fmt;
 
 use anyhow::Result;
-use log::info;
+use log::{info, debug};
 
 use crate::config::Config;
+use crate::message::Message as FlowMessage;
 
 #[macro_export]
 macro_rules! plugin_exec_result {
@@ -43,19 +51,29 @@ pub trait Plugin {
     fn get_name(&self) -> String;
     fn get_version(&self) -> String;
     fn get_description(&self) -> String;
-    async fn func(&self, params: Map<String, Value>) -> PluginExecResult;
+    async fn func(&self, params: Map<String, Value>, rt_handle: tokio::runtime::Handle, rx: &Vec<Sender<FlowMessage>>, tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult;
 }
+
+pub type BoxPlugin = Box<(dyn Plugin + Sync + Send + 'static)>;
 
 struct PluginLib {
     path: String,
     lib: Library,
 }
 
+impl fmt::Debug for PluginLib {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.debug_struct("PluginLib")
+           .field("path", &self.path)
+           .finish()
+    }
+}
+
 #[derive(SymBorApi)]
 struct PluginApi<'a> {
     // The plugin library must implement this function and return a raw pointer
     // to a Plugin struct.
-    get_plugin: Symbol<'a, unsafe extern fn() -> *mut dyn Plugin>,
+    get_plugin: Symbol<'a, unsafe extern fn() -> *mut (dyn Plugin + Send + Sync)>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -101,7 +119,7 @@ impl PluginRegistry {
         &PLUGIN_REGISTRY
     }
 
-    pub fn load_plugins(dir: &str) {
+    pub async fn load_plugins(dir: &str) {
         let mut pr = PLUGIN_REGISTRY.lock().unwrap();
 
         let pattern = dir.to_owned() + "/" + "*.dylib";
@@ -116,6 +134,7 @@ impl PluginRegistry {
                     let api = unsafe { PluginApi::load(&lib) }.expect("Could not load symboles");
                     let plugin = unsafe { Box::from_raw((api.get_plugin)()) };
 
+                    info!("Inserting {} into plugin registry", plugin.get_name());
                     pr.plugins.insert(plugin.get_name(), PluginLib{
                         path: path.display().to_string(),
                         lib,
@@ -127,17 +146,34 @@ impl PluginRegistry {
         }
     }
 
-    pub async fn exec_plugin(&self, name: &str, params: Map<String, Value>) -> PluginExecResult {
-        let plugin_lib = match self.plugins.get(name) {
-            Some(p) => p,
-            None => return plugin_exec_result!(Status::Ko, "Plugin ".to_string() + name + " not found",),
-        };
+    //pub async fn exec_plugin(&self, name: &str, params: Map<String, Value>, rx: &Vec<Sender<FlowMessage>>, tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
+        //info!("{:?}", self.plugins);
+        //let plugin_lib = match self.plugins.get(name) {
+            //Some(p) => p,
+            //None => return plugin_exec_result!(Status::Ko, "Plugin ".to_string() + name + " not found",),
+        //};
 
-        let api = unsafe { PluginApi::load(&plugin_lib.lib) }.expect("Could not load symboles");
-        let plugin = unsafe { Box::from_raw((api.get_plugin)()) };
+        //let api = unsafe { PluginApi::load(&plugin_lib.lib) }.expect("Could not load symboles");
+        //let plugin = unsafe { Box::from_raw((api.get_plugin)()) };
 
-        plugin.func(params).await
+        //plugin.func(params, rx, tx).await
+    //}
+
+    pub fn get_plugin(name: &str) -> Option<BoxPlugin> {
+        let registry = PluginRegistry::get().lock().unwrap();
+
+        debug!("Searching plugin {} in the plugin registry: {:?}", name, registry.plugins);
+        if let Some(plugin_lib) = registry.plugins.get(name) {
+            let api = unsafe { PluginApi::load(&plugin_lib.lib) }.expect("Could not load symboles");
+            return unsafe { Some(Box::from_raw((api.get_plugin)())) };
+        }
+
+        None
     }
+
+    //pub fn debug(&self) {
+        //info!("Plugin registry: {:?}", self.plugins);
+    //}
 }
 
 #[cfg(test)]
@@ -149,14 +185,16 @@ mod tests {
     #[tokio::test]
     //#[test]
     async fn test_load_plugins() {
-        PluginRegistry::load_plugins("target/debug");
+        env_logger::init();
+        PluginRegistry::load_plugins("target/debug").await;
 
-        let registry = PluginRegistry::get().lock().unwrap();
 
         let mut params = Map::new();
         params.insert("cmd".to_string(), jsonValue::String("ls -la".to_string()));
 
-        let res = registry.exec_plugin("shell", params).await;
+        let plugin = PluginRegistry::get_plugin("builtin_shell").unwrap();
+        let res = plugin.func(params, tokio::runtime::Handle::current(), &vec![], &vec![]).await;
+
         println!("{:?}", res)
     }
 
