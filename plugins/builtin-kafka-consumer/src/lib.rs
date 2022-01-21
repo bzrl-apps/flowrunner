@@ -8,11 +8,11 @@ use json_ops::JsonOps;
 use serde::{Deserialize, Serialize};
 //use std::collections::HashMap;
 use serde_json::value::Value;
-use serde_json::{Map, Number, json};
+use serde_json::Map;
 
 //use tokio::sync::*;
 use async_channel::{Sender, Receiver, bounded};
-use tokio::runtime::{Handle, Runtime};
+use tokio::runtime::Runtime;
 use async_trait::async_trait;
 
 use log::{info, error, debug};
@@ -68,13 +68,14 @@ impl Plugin for KafkaConsumer {
         env!("CARGO_PKG_DESCRIPTION").to_string()
     }
 
-    async fn func(&self, params: Map<String, Value>, rt_handle: Handle, rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
-        //let mut result: Map<String, Value> = Map::new();
+    async fn func(&self, params: Map<String, Value>, rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
         env_logger::init();
-        // Create the runtime
-        let _guard = rt_handle.enter();
 
         let mut result = PluginExecResult::default();
+
+        let rt = Runtime::new().unwrap();
+        let _guard = rt.enter();
+
         let params_cloned = params.clone();
         let rx_cloned = rx.clone();
         //let result_cloned = result.clone();
@@ -93,16 +94,11 @@ impl Plugin for KafkaConsumer {
 }
 
 async fn run(params: Map<String, Value>, rx: &Vec<Sender<FlowMessage>>) -> PluginExecResult {
-    //let mut result: Map<String, Value> = Map::new();
-
     let mut result = PluginExecResult::default();
-    //let params = params.clone();
-    //let rx_cloned = rx.clone();
-    //let mut result_cloned = result.clone();
 
     let jops_params = JsonOps::new(Value::Object(params));
 
-    info!("{:?}", jops_params);
+    debug!("Job params: {:?}", jops_params);
     let brokers: Vec<String> = match jops_params.get_value_e("brokers") {
         Ok(b) => b,
         Err(e) => {
@@ -204,7 +200,7 @@ async fn run(params: Map<String, Value>, rx: &Vec<Sender<FlowMessage>>) -> Plugi
 
 #[no_mangle]
 pub fn get_plugin() -> *mut (dyn Plugin + Send + Sync) {
-    println!("Plugin KafkaConsumer loaded!");
+    info!("Plugin KafkaConsumer loaded!");
 
     // Return a raw pointer to an instance of our plugin
     Box::into_raw(Box::new(KafkaConsumer {}))
@@ -232,10 +228,10 @@ mod tests {
         let rxs = vec![rx.clone()];
         let txs = vec![tx.clone()];
 
-        let mut params: Map<String, Value> = Map::new();
+        let params: Map<String, Value> = Map::new();
 
         let producer: FutureProducer = ClientConfig::new()
-            .set("bootstrap.servers", "localhost:9092")
+            .set("bootstrap.servers", "localhost:29092")
             .set("message.timeout.ms", "5000")
             .create().unwrap();
 
@@ -255,12 +251,12 @@ mod tests {
             Err((e, _)) => println!("Sent eror: {:?}", e),
         }
 
-        let value = json!({"brokers": ["127.0.0.1:9092"], "consumer": {"group_id": "group1", "topics": [{"name": "topic1", "event": "event1"}, {"name": "topic2", "event": "event2"}], "offset": "earliest"}});
+        let value = json!({"brokers": ["127.0.0.1:29092"], "consumer": {"group_id": "group1", "topics": [{"name": "topic1", "event": "event1"}, {"name": "topic2", "event": "event2"}], "offset": "earliest"}});
 
         params = value.as_object().unwrap().to_owned();
 
         tokio::spawn(async move{
-            let _ = consumer.func(params.clone(), tokio::runtime::Handle::current(), &rxs, &vec![]).await;
+            let _ = consumer.func(params.clone(), &rxs, &vec![]).await;
         });
 
         sleep(Duration::from_millis(1000)).await;
