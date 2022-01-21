@@ -335,6 +335,7 @@ dependencies = [
  "envmnt",
  "futures",
  "glob",
+ "json_ops",
  "lazy_static",
  "log",
  "rdkafka",

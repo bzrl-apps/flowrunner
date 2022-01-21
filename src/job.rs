@@ -130,19 +130,6 @@ impl Job {
                     // Add message received as data in job context
                     Ok(msg) => {
                         match msg {
-                            //FlowMessage::Json(v) => {
-                                //match Value::from_str(v.to_string().as_str()) {
-                                    //Ok(m) => {
-                                        //debug!("JOB {}, msg received: {}", self.name, m);
-
-                                        //self.context.insert("data".to_string(), json!(m));
-                                    //},
-                                    //Err(e) => {
-                                        //error!("{}", e.to_string());
-                                        //continue;
-                                    //}
-                                //}
-                            //},
                             FlowMessage::Json(v) => { self.context.insert("data".to_string(), v); },
                             _ => {
                                 error!("Message received is not Message::Json type");
@@ -188,7 +175,7 @@ impl Job {
 
             match PluginRegistry::get_plugin(&t.plugin) {
                 Some(plugin) => {
-                    let res = plugin.func(t.params, tokio::runtime::Handle::current(), &self.rx, &self.tx).await;
+                    let res = plugin.func(t.params, &self.rx, &self.tx).await;
                     self.result.insert(t.name.clone(), res.clone());
 
                     info!("Task result: name {}, res: {:?}",  t.name.clone(), res);
@@ -223,7 +210,7 @@ impl Job {
 
                     match PluginRegistry::get_plugin(&t.plugin) {
                         Some(plugin) => {
-                            let res = plugin.func(t.params, tokio::runtime::Handle::current(), &self.rx, &self.tx).await;
+                            let res = plugin.func(t.params, &self.rx, &self.tx).await;
                             self.result.insert(t.name.clone(), res.clone());
 
                             info!("Task result: name {}, res: {:?}",  t.name.clone(), res);

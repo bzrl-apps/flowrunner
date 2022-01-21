@@ -6,7 +6,7 @@ extern crate clap;
 use log::{info, error};
 use env_logger::Env;
 
-use clap::{Arg, App, SubCommand};
+use clap::{Arg, App};
 
 use crate::plugin::PluginRegistry;
 
@@ -34,35 +34,27 @@ async fn main() {
                             .default_value(".flowrunner.yaml")
                             .help("Sets a custom config file")
                             .takes_value(true))
-                        .arg(Arg::with_name("verbose")
-                            .short("v")
-                            .multiple(true)
-                            .help("Sets the level of verbosity"))
                         .arg(Arg::with_name("plugin-dir")
-                            .short("m")
+                            .short("p")
                             .long("--plugin-dir")
+                            .takes_value(true)
                             .help("Module directory"))
                         .arg(Arg::with_name("flow-dir")
                             .short("w")
                             .long("--flow-dir")
+                            .takes_value(true)
                             .help("Flow directory"))
                         .subcommand(
                             App::new("exec")
                                 .about("Execute a flow given by a file")
                                 .arg(Arg::with_name("flow-file")
                                     .long("--flow-file")
+                                    .short("f")
                                     .takes_value(true)
                                     .help("Name of the flow file to execute")))
                         .get_matches();
 
-    let log_level;
-    match matches.occurrences_of("verbose") {
-        0 => log_level = "info",
-        1 => log_level = "debug",
-        _ => log_level = "trace",
-    }
-
-    env_logger::Builder::from_env(Env::default().default_filter_or(log_level)).init();
+    env_logger::init();
 
     // Gets a value for config if supplied by user, or defaults to ".mgr.yaml"
     let config_file = matches.value_of("config");
@@ -88,7 +80,7 @@ async fn main() {
 
     match matches.subcommand() {
         ("exec", Some(exec_matches)) => {
-            match exec::exec_cmd(config.clone(), exec_matches).await {
+            match exec::exec_cmd(&config, exec_matches).await {
                 Ok(()) => (),
                 Err(e) => { error!("{}", e.to_string()); },
             }

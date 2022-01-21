@@ -74,3 +74,5 @@ envmnt = "0.9"
 
 # Kafka
 rdkafka = { version = "0.25", features = ["default"] }
+
+json_ops = { path = "json-ops" }

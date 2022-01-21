@@ -76,7 +76,7 @@ impl Source {
                 let tx_cloned = vec![];
                 //let result_cloned = result.clone();
                 tokio::spawn(async move {
-                    let res = plugin.func(params_cloned, tokio::runtime::Handle::current().clone(), &rx_cloned, &tx_cloned).await;
+                    let res = plugin.func(params_cloned, &rx_cloned, &tx_cloned).await;
                     if res.status == PluginStatus::Ko {
                         error!("{}", res.error);
                     }

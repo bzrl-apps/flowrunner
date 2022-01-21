@@ -1,13 +1,34 @@
 use clap::ArgMatches;
 
+use anyhow::{anyhow, Result};
+use tokio::signal;
+use log::error;
+
 use crate::config::Config;
+use crate::flow::Flow;
 
-pub async fn exec_cmd(config: Config, matches: &ArgMatches<'_>) {
+pub async fn exec_cmd(config: &Config, matches: &ArgMatches<'_>) -> Result<()> {
 
-    //let string = matches.value_of("workflows").expected("you must specify a list of workflows");
-    //let wfs: Vec<&str> = string.split(";").collect();
+    let file = match matches.value_of("flow-file") {
+        Some(f) => f,
+        None => return Err(anyhow!("You must specify the flow file in the specified flow directory (--flow-dir)")),
+    };
 
-    //for name in wfs.iter() {
-            //flow::execute(name)
-    //}
+    let mut flow = Flow::new_from_file(&(config.runner.flow_dir.as_str().to_owned() + "/" + file))?;
+
+    tokio::spawn(async move {
+        match flow.run().await {
+            Ok(()) => (),
+            Err(e) => { error!("{}", e.to_string()); },
+        }
+    });
+
+    match signal::ctrl_c().await {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            error!("Unable to listen for shutdown signal: {}", e);
+            // we also shut down in case of error
+            return Err(anyhow!(e));
+        },
+    }
 }

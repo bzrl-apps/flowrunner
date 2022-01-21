@@ -51,7 +51,7 @@ pub trait Plugin {
     fn get_name(&self) -> String;
     fn get_version(&self) -> String;
     fn get_description(&self) -> String;
-    async fn func(&self, params: Map<String, Value>, rt_handle: tokio::runtime::Handle, rx: &Vec<Sender<FlowMessage>>, tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult;
+    async fn func(&self, params: Map<String, Value>, rx: &Vec<Sender<FlowMessage>>, tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult;
 }
 
 pub type BoxPlugin = Box<(dyn Plugin + Sync + Send + 'static)>;
@@ -146,19 +146,6 @@ impl PluginRegistry {
         }
     }
 
-    //pub async fn exec_plugin(&self, name: &str, params: Map<String, Value>, rx: &Vec<Sender<FlowMessage>>, tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
-        //info!("{:?}", self.plugins);
-        //let plugin_lib = match self.plugins.get(name) {
-            //Some(p) => p,
-            //None => return plugin_exec_result!(Status::Ko, "Plugin ".to_string() + name + " not found",),
-        //};
-
-        //let api = unsafe { PluginApi::load(&plugin_lib.lib) }.expect("Could not load symboles");
-        //let plugin = unsafe { Box::from_raw((api.get_plugin)()) };
-
-        //plugin.func(params, rx, tx).await
-    //}
-
     pub fn get_plugin(name: &str) -> Option<BoxPlugin> {
         let registry = PluginRegistry::get().lock().unwrap();
 
@@ -193,7 +180,7 @@ mod tests {
         params.insert("cmd".to_string(), jsonValue::String("ls -la".to_string()));
 
         let plugin = PluginRegistry::get_plugin("builtin_shell").unwrap();
-        let res = plugin.func(params, tokio::runtime::Handle::current(), &vec![], &vec![]).await;
+        let res = plugin.func(params, &vec![], &vec![]).await;
 
         println!("{:?}", res)
     }

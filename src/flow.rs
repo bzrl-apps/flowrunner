@@ -9,7 +9,7 @@ use serde_json::value::Value as jsonValue;
 
 use anyhow::{anyhow, Result};
 
-//use tokio::sync::mpsc::*;
+use tokio::signal;
 use async_channel::*;
 
 use crate::{
@@ -108,6 +108,8 @@ impl Flow {
 
         match self.kind {
             Kind::Stream => {
+                info!("Flow kind: Stream");
+
                 if self.sources.len() <= 0 {
                     return Err(anyhow!("At least one source must be specified when using flow stream"));
                 }
@@ -131,113 +133,39 @@ impl Flow {
                     }
                 }
 
-                let srcs_cloned = self.sources.clone();
-                tokio::spawn(async move {
-                    match run_all_sources(srcs_cloned).await {
-                        Ok(()) => (),
-                        Err(e) => error!("{}", e.to_string()),
-                    }
-                }).await?;
+                self.launch_source_threads().await;
+                self.launch_job_threads().await;
             },
             _ => {
-                info!("kind = Kind::Action");
+                info!("Flow kind: Action");
+                self.launch_job_threads().await;
             },
         }
-
-        let jobs_cloned = self.jobs.clone();
-        let kind_cloned = self.kind.clone();
-        let res = tokio::spawn(async move {
-            match run_all_jobs(kind_cloned, jobs_cloned).await {
-                Ok(jobs) => Ok(jobs),
-                Err(e) => Err(anyhow!(e)),
-            }
-            //run_all_jobs(kind_cloned, jobs_cloned).await?
-        }).await?;
-
-        self.jobs = match res {
-            Ok(j) => j,
-            Err(e) => return Err(anyhow!(e)),
-        };
 
         Ok(())
     }
 
-    //async fn run_all_sources(&mut self) -> Result<()> {
-        //let sources = self.sources.clone();
+    async fn launch_source_threads(&self) {
+        // Launch source threads
+        let srcs_cloned = self.sources.clone();
+        tokio::spawn(async move {
+            if let Err(e) = run_all_sources(srcs_cloned).await {
+                error!("{}", e.to_string());
+            }
+        });
+    }
 
-        //for (i, j) in sources.iter().enumerate() {
-            //info!("Executing source {}", j.name);
-
-            //let mut src_cloned = j.clone();
-            //tokio::spawn(async move {
-                //match src_cloned.run().await {
-                    //Ok(()) => (),
-                    //Err(e) => error!("{}", e.to_string()),
-                //}
-            //}).await?;
-        //}
-
-        //Ok(())
-    //}
-
-    //async fn run_all_jobs(&mut self) -> Result<()> {
-        //let mut jobs = self.jobs.clone();
-
-        //for (i, j) in self.jobs.iter().enumerate() {
-            //info!("Executing job {}", j.name);
-
-            //self.exec_job(&mut jobs, i).await?;
-        //}
-
-        //self.jobs = jobs.to_vec();
-
-        //Ok(())
-    //}
-
-    //fn run_job(&mut self) {}
-
-    //async fn exec_job(&self, jobs: &mut [Job], idx: usize) -> Result<()> {
-        //let mut job = jobs[idx].clone();
-
-        //if job.hosts == "".to_string() || job.hosts == "localhost".to_string() || job.hosts == "127.0.0.1".to_string() {
-            //let _ = self.exec_job_local(&mut job).await?;
-            //jobs[idx] = job;
-
-            //return Ok(());
-        //}
-
-        //let _ = self.exec_job_remote(&mut job)?;
-        //jobs[idx] = job;
-
-        //Ok(())
-    //}
-
-    //async fn exec_job_local(&self, job: &mut Job) -> Result<()> {
-        //info!("Executing locally the job {}", job.name);
-
-        //// Report global flow settings in job context
-        //job.context.insert("variables".to_string(), jsonValue::from(self.variables.clone()));
-
-        //if self.kind == Kind::Stream {
-            //let mut job_cloned = job.clone();
-            //tokio::spawn(async move {
-                //match job_cloned.run(None).await {
-                    //Ok(()) => (),
-                    //Err(e) => error!("{}", e.to_string()),
-                //}
-            //}).await?;
-        //} else {
-            //job.run(None).await?;
-        //}
-
-        //Ok(())
-    //}
-
-    //fn exec_job_remote(&self, job: &mut Job) -> Result<()> {
-        //info!("Executing remotely the job {}", job.name);
-
-        //Ok(())
-    //}
+    async fn launch_job_threads(&mut self) {
+        // Launch job threads
+        let jobs_cloned = self.jobs.clone();
+        let kind_cloned = self.kind.clone();
+        tokio::spawn(async move {
+            match run_all_jobs(kind_cloned, jobs_cloned).await {
+                Ok(jobs) => Ok(jobs),
+                Err(e) => Err(anyhow!(e)),
+            }
+        });
+    }
 }
 
 async fn run_all_sources(sources: Vec<Source>) -> Result<()> {
@@ -250,7 +178,7 @@ async fn run_all_sources(sources: Vec<Source>) -> Result<()> {
                 Ok(()) => (),
                 Err(e) => error!("{}", e.to_string()),
             }
-        }).await?;
+        });
     }
 
     Ok(())
@@ -294,7 +222,7 @@ async fn exec_job_local(kind: Kind, job: &mut Job) -> Result<()> {
                 Ok(()) => (),
                 Err(e) => error!("{}", e.to_string()),
             }
-        }).await?;
+        });
     } else {
         job.run(None).await?;
     }
@@ -886,6 +814,6 @@ jobs:
             flow.run().await.unwrap();
         });
 
-        sleep(Duration::from_millis(5000)).await;
+        sleep(Duration::from_millis(10000)).await;
     }
 }
