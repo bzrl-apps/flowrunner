@@ -2,10 +2,10 @@ use clap::ArgMatches;
 
 use anyhow::{anyhow, Result};
 use tokio::signal;
-use log::error;
+use log::{error, info};
 
 use crate::config::Config;
-use crate::flow::Flow;
+use crate::flow::{Flow, Kind};
 
 pub async fn exec_cmd(config: &Config, matches: &ArgMatches<'_>) -> Result<()> {
 
@@ -16,19 +16,32 @@ pub async fn exec_cmd(config: &Config, matches: &ArgMatches<'_>) -> Result<()> {
 
     let mut flow = Flow::new_from_file(&(config.runner.flow_dir.as_str().to_owned() + "/" + file))?;
 
-    tokio::spawn(async move {
-        match flow.run().await {
-            Ok(()) => (),
-            Err(e) => { error!("{}", e.to_string()); },
-        }
-    });
+    let kind = flow.kind.clone();
 
-    match signal::ctrl_c().await {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            error!("Unable to listen for shutdown signal: {}", e);
-            // we also shut down in case of error
-            return Err(anyhow!(e));
-        },
+    // flow == stream
+    if kind == Kind::Stream {
+        tokio::spawn(async move {
+            match flow.run().await {
+                Ok(()) => (),
+                Err(e) => { error!("{}", e.to_string()); },
+            }
+        });
+
+        match signal::ctrl_c().await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                error!("Unable to listen for shutdown signal: {}", e);
+                // we also shut down in case of error
+                return Err(anyhow!(e));
+            },
+        };
     }
+
+    // flow == action
+    match flow.run().await {
+        Ok(()) => info!("{flow:?}"),
+        Err(e) => error!("{e}"),
+    }
+
+    Ok(())
 }

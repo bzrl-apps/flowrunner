@@ -123,6 +123,7 @@ name = "builtin_shell"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-channel",
  "async-trait",
  "env_logger",
  "flowrunner",

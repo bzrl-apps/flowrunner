@@ -28,23 +28,6 @@ macro_rules! job_result {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Status {
-    Ko = 0,
-    Ok = 1,
-}
-
-// Implement trait Default for Status
-impl Default for Status {
-    fn default() -> Self {
-        Status::Ko
-    }
-}
-
-impl Status {
-    fn ko() -> Self { Status::Ko }
-}
-
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct Job {
     #[serde(default)]
@@ -59,8 +42,6 @@ pub struct Job {
     #[serde(default)]
 	pub context: Map<String, Value>,
 
-    #[serde(default = "Status::ko")]
-	pub status: Status,
     #[serde(default)]
 	pub result: HashMap<String, PluginExecResult>,
 
@@ -106,7 +87,6 @@ impl PartialEq for Job {
         self.hosts == other.hosts &&
         self.tasks == other.tasks &&
         self.context == other.context &&
-        self.status == other.status &&
         self.result == other.result
     }
 }

@@ -9,8 +9,8 @@ use serde_json::value::Value as jsonValue;
 
 use anyhow::{anyhow, Result};
 
-use tokio::signal;
 use async_channel::*;
+use tokio::sync::*;
 
 use crate::{
     job::{Task, Job},
@@ -63,11 +63,6 @@ pub struct Flow {
 	// even if it is local
     #[serde(default)]
 	pub is_on_remote: bool,
-
-    //#[serde(default)]
-	//pub status: Status,
-    #[serde(default)]
-	pub result: HashMap<String, Job>
 }
 
 impl Default for Flow {
@@ -82,7 +77,6 @@ impl Default for Flow {
             remote_exec_dir: "".to_string(),
             inventory_file: "".to_string(),
             is_on_remote: false,
-            result: HashMap::new()
         }
     }
 }
@@ -157,14 +151,22 @@ impl Flow {
 
     async fn launch_job_threads(&mut self) {
         // Launch job threads
+        let (tx, rx) = oneshot::channel();
+
         let jobs_cloned = self.jobs.clone();
         let kind_cloned = self.kind.clone();
         tokio::spawn(async move {
-            match run_all_jobs(kind_cloned, jobs_cloned).await {
-                Ok(jobs) => Ok(jobs),
-                Err(e) => Err(anyhow!(e)),
+            if let Ok(jobs) = run_all_jobs(kind_cloned, jobs_cloned).await {
+                if let Err(_) = tx.send(jobs) {
+                    error!("Sending jobs result: receiver dropped");
+                }
             }
         });
+
+        match rx.await {
+            Ok(v) => self.jobs = v,
+            Err(_) => println!("Receving jobs result: sender dropped"),
+        }
     }
 }
 
@@ -202,6 +204,8 @@ async fn exec_job(kind: Kind, jobs: &mut [Job], idx: usize) -> Result<()> {
     if job.hosts == "".to_string() || job.hosts == "localhost".to_string() || job.hosts == "127.0.0.1".to_string() {
         let _ = exec_job_local(kind, &mut job).await?;
         jobs[idx] = job;
+
+        println!("Job: {:?}", jobs[idx]);
 
         return Ok(());
     }
