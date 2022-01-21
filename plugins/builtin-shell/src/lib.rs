@@ -6,8 +6,8 @@ use flowrunner::message::Message as FlowMessage;
 use serde_json::value::Value;
 use serde_json::{Map, Number};
 
-use tokio::sync::*;
 use async_trait::async_trait;
+use async_channel::{Sender, Receiver};
 
 use std::process::Command;
 
@@ -28,7 +28,7 @@ impl Plugin for Shell {
         env!("CARGO_PKG_DESCRIPTION").to_string()
     }
 
-    async fn func(&self, params: Map<String, Value>, _rx: &Vec<mpsc::Sender<FlowMessage>>, _tx: &Vec<mpsc::Receiver<FlowMessage>>) -> PluginExecResult {
+    async fn func(&self, params: Map<String, Value>, _rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
         //let mut result: Map<String, Value> = Map::new();
         let mut result = PluginExecResult::default();
 
@@ -94,6 +94,7 @@ pub fn get_plugin() -> *mut dyn Plugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Number;
 
     #[tokio::test]
     //#[test]
@@ -102,6 +103,8 @@ mod tests {
 
         let mut params: Map<String, Value> = Map::new();
         let mut expected = PluginExecResult::default();
+        let txs_empty = Vec::<Sender<FlowMessage>>::new();
+        let rxs_empty = Vec::<Receiver<FlowMessage>>::new();
 
         // Case OK
         params.insert("cmd".to_string(), Value::String("echo Hello world".to_string()));
@@ -110,7 +113,7 @@ mod tests {
         expected.output.insert("rc".to_string(), Value::Number(Number::from(0)));
         expected.output.insert("stdout".to_string(), Value::String("Hello world\n".to_string()));
 
-        let mut result = shell.func(params.clone()).await;
+        let mut result = shell.func(params.clone(), &txs_empty, &rxs_empty).await;
         assert_eq!(expected, result);
 
         expected.output.clear();
@@ -123,7 +126,7 @@ mod tests {
         expected.output.insert("rc".to_string(), Value::Number(Number::from(1)));
         expected.output.insert("stderr".to_string(), Value::String("ls: illegal option -- z\nusage: ls [-@ABCFGHLOPRSTUWabcdefghiklmnopqrstuwx1%] [file ...]\n".to_string()));
 
-        result = shell.func(params.clone()).await;
+        result = shell.func(params.clone(), &txs_empty, &rxs_empty).await;
         assert_eq!(expected, result);
 
         expected.output.clear();

@@ -13,6 +13,7 @@ flowrunner = { path = "../../" }
 # Async/await
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
+async-channel = "1"
 
 # Error
 anyhow = { version = "1.0" }
