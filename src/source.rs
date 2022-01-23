@@ -28,29 +28,6 @@ pub struct Source {
 	pub tx: Vec<Receiver<FlowMessage>>
 }
 
-//impl Clone for Source {
-    //fn clone(&self) -> Self {
-        //let mut rx: Vec<Sender<FlowMessage>> = Vec::new();
-        ////let mut tx: Vec<Receiver<FlowMessage>> = Vec::new();
-
-        //for r in self.rx.iter() {
-            //rx.push(r.clone());
-        //}
-
-        ////for t in self.tx.iter() {
-            ////tx.push(t.clone());
-        ////}
-
-        //Source {
-            //name: self.name.clone(),
-            //plugin: self.plugin.clone(),
-            //params: self.params.clone(),
-            //rx,
-            //tx: vec![],
-        //}
-    //}
-//}
-
 impl PartialEq for Source {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name &&

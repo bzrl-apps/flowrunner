@@ -27,7 +27,8 @@ members = [
   ".",
   "json-ops",
   "plugins/builtin-shell",
-  "plugins/builtin-kafka-consumer"
+  "plugins/builtin-kafka-consumer",
+  "plugins/builtin-uri"
 ]
 
 #[lib]

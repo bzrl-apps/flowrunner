@@ -25,7 +25,6 @@ use std::fmt;
 use anyhow::Result;
 use log::{info, debug};
 
-use crate::config::Config;
 use crate::message::Message as FlowMessage;
 
 #[macro_export]
@@ -51,6 +50,7 @@ pub trait Plugin {
     fn get_name(&self) -> String;
     fn get_version(&self) -> String;
     fn get_description(&self) -> String;
+    fn validate_params(&mut self, params: Map<String, Value>) -> Result<()>;
     async fn func(&self, params: Map<String, Value>, rx: &Vec<Sender<FlowMessage>>, tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult;
 }
 

@@ -6,6 +6,8 @@ use flowrunner::message::Message as FlowMessage;
 use serde_json::value::Value;
 use serde_json::{Map, Number};
 
+use anyhow::{anyhow, Result};
+
 use async_trait::async_trait;
 use async_channel::{Sender, Receiver};
 
@@ -26,6 +28,10 @@ impl Plugin for Shell {
 
     fn get_description(&self) -> String {
         env!("CARGO_PKG_DESCRIPTION").to_string()
+    }
+
+    fn validate_params(&mut self, params: Map<String, Value>) -> Result<()> {
+        Ok(())
     }
 
     async fn func(&self, params: Map<String, Value>, _rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
