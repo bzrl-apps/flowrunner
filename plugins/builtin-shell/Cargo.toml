@@ -1,5 +1,5 @@
 [package]
-name = "builtin_shell"
+name = "builtin-shell"
 version = "0.1.0"
 authors = ["Thanh NGUYEN <thanh@uthng.me>"]
 edition = "2018"
@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 
 flowrunner = { path = "../../" }
+json_ops = { path = "../../json-ops" }
 
 # Async/await
 tokio = { version = "1", features = ["full"] }
