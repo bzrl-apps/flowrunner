@@ -125,7 +125,7 @@ impl Job {
                             self.run_all_tasks(self.start.clone()).await?;
                         }
                     },
-                    Err(e) => error!("{}", e.to_string()),
+                    Err(e) => { error!("{}", e.to_string()); break; },
                 }
             }
         } else {
@@ -154,8 +154,9 @@ impl Job {
             self.render_task_template(&mut t)?;
 
             match PluginRegistry::get_plugin(&t.plugin) {
-                Some(plugin) => {
-                    let res = plugin.func(t.params, &self.rx, &self.tx).await;
+                Some(mut plugin) => {
+                    plugin.validate_params(t.params.clone())?;
+                    let res = plugin.func(&self.rx, &self.tx).await;
                     self.result.insert(t.name.clone(), res.clone());
 
                     info!("Task result: name {}, res: {:?}",  t.name.clone(), res);
@@ -189,8 +190,9 @@ impl Job {
                     info!("Task executed: name {}, params {:?}", t.name, t.params);
 
                     match PluginRegistry::get_plugin(&t.plugin) {
-                        Some(plugin) => {
-                            let res = plugin.func(t.params, &self.rx, &self.tx).await;
+                        Some(mut plugin) => {
+                            plugin.validate_params(t.params.clone())?;
+                            let res = plugin.func(&self.rx, &self.tx).await;
                             self.result.insert(t.name.clone(), res.clone());
 
                             info!("Task result: name {}, res: {:?}",  t.name.clone(), res);

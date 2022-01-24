@@ -41,19 +41,14 @@ impl Source {
         info!("SOURCE RUN STARTED: name {}, plugin {}, params: {:?}, nb rx: {}", self.name, self.plugin, self.params, self.rx.len());
 
         match PluginRegistry::get_plugin(&self.plugin) {
-            Some(plugin) => {
-                //let res = plugin.func(self.params.clone(), &self.rx, &self.tx).await;
-                //if res.status == PluginStatus::Ko {
-                    //return Err(anyhow!(res.error));
-                //}
+            Some(mut plugin) => {
+                plugin.validate_params(self.params.clone())?;
 
-                //let mut result = PluginExecResult::default();
-                let params_cloned = self.params.clone();
                 let rx_cloned = self.rx.clone();
                 let tx_cloned = vec![];
                 //let result_cloned = result.clone();
                 tokio::spawn(async move {
-                    let res = plugin.func(params_cloned, &rx_cloned, &tx_cloned).await;
+                    let res = plugin.func(&rx_cloned, &tx_cloned).await;
                     if res.status == PluginStatus::Ko {
                         error!("{}", res.error);
                     }

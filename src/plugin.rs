@@ -50,8 +50,9 @@ pub trait Plugin {
     fn get_name(&self) -> String;
     fn get_version(&self) -> String;
     fn get_description(&self) -> String;
+    fn get_params(&self) -> Map<String, Value>;
     fn validate_params(&mut self, params: Map<String, Value>) -> Result<()>;
-    async fn func(&self, params: Map<String, Value>, rx: &Vec<Sender<FlowMessage>>, tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult;
+    async fn func(&self, rx: &Vec<Sender<FlowMessage>>, tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult;
 }
 
 pub type BoxPlugin = Box<(dyn Plugin + Sync + Send + 'static)>;
@@ -180,7 +181,7 @@ mod tests {
         params.insert("cmd".to_string(), jsonValue::String("ls -la".to_string()));
 
         let plugin = PluginRegistry::get_plugin("builtin_shell").unwrap();
-        let res = plugin.func(params, &vec![], &vec![]).await;
+        let res = plugin.func(&vec![], &vec![]).await;
 
         println!("{:?}", res)
     }
