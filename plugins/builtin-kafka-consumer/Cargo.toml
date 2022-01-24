@@ -1,5 +1,5 @@
 [package]
-name = "builtin_kafka_consumer"
+name = "builtin-kafka-consumer"
 version = "0.1.0"
 authors = ["Thanh NGUYEN <thanh@uthng.me>"]
 edition = "2021"

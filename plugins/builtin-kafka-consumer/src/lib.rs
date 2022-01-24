@@ -8,7 +8,9 @@ use json_ops::JsonOps;
 use serde::{Deserialize, Serialize};
 //use std::collections::HashMap;
 use serde_json::value::Value;
-use serde_json::Map;
+use serde_json::{json, Map};
+
+use anyhow::{anyhow, Result};
 
 //use tokio::sync::*;
 use async_channel::{Sender, Receiver, bounded};
@@ -28,19 +30,16 @@ use rdkafka::{
 };
 
 
-#[derive(Default, Debug ,Serialize, Deserialize, Clone, PartialEq)]
-pub struct ConsumerConfig {
+#[derive(Debug ,Serialize, Deserialize, Clone)]
+struct Config {
     #[serde(default = "default_group_id")]
-    pub group_id: String,
+    group_id: String,
     #[serde(default = "default_offset")]
-    pub offset: String,
-    pub topics: Vec<TopicConfig>
-}
-
-#[derive(Default, Debug ,Serialize, Deserialize, Clone, PartialEq)]
-pub struct TopicConfig {
-    pub name: String,
-    pub event: String
+    offset: String,
+    topics: Vec<String>,
+    options: Map<String, Value>,
+    #[serde(default = "default_loglevel")]
+    log_level: String
 }
 
 fn default_group_id() -> String {
@@ -51,8 +50,28 @@ fn default_offset() -> String {
     "earliest".to_string()
 }
 
+fn default_loglevel() -> String {
+    "info".to_string()
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            group_id: "consumer-group-1".to_string(),
+            offset: "latest".to_string(),
+            topics: vec![],
+            options: Map::new(),
+            log_level: "info".to_string(),
+        }
+    }
+}
+
 // Our plugin implementation
-struct KafkaConsumer;
+#[derive(Default, Debug ,Serialize, Deserialize, Clone)]
+struct KafkaConsumer {
+    brokers: Vec<String>,
+    config: Config,
+}
 
 #[async_trait]
 impl Plugin for KafkaConsumer {
@@ -68,7 +87,29 @@ impl Plugin for KafkaConsumer {
         env!("CARGO_PKG_DESCRIPTION").to_string()
     }
 
-    async fn func(&self, params: Map<String, Value>, rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
+    fn get_params(&self) -> Map<String, Value> {
+        let params: Map<String, Value> = Map::new();
+
+        params
+    }
+
+    fn validate_params(&mut self, params: Map<String, Value>) -> Result<()> {
+        let jops_params = JsonOps::new(Value::Object(params));
+
+        match jops_params.get_value_e::<Vec<String>>("brokers") {
+            Ok(b) => self.brokers = b,
+            Err(e) => { return Err(anyhow!(e)); },
+        };
+
+        match jops_params.get_value_e::<Config>("consumer") {
+            Ok(c) => self.config = c,
+            Err(e) => { return Err(anyhow!(e)); },
+        };
+
+        Ok(())
+    }
+
+    async fn func(&self, rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
         env_logger::init();
 
         let mut result = PluginExecResult::default();
@@ -76,11 +117,11 @@ impl Plugin for KafkaConsumer {
         let rt = Runtime::new().unwrap();
         let _guard = rt.enter();
 
-        let params_cloned = params.clone();
+        let brokers_cloned = self.brokers.clone();
+        let config_cloned = self.config.clone();
         let rx_cloned = rx.clone();
-        //let result_cloned = result.clone();
         match tokio::spawn(async move {
-            return run(params_cloned, &rx_cloned).await;
+            return run(brokers_cloned, config_cloned, &rx_cloned).await;
         }).await {
             Ok(r) => r,
             Err(e) => {
@@ -93,41 +134,37 @@ impl Plugin for KafkaConsumer {
     }
 }
 
-async fn run(params: Map<String, Value>, rx: &Vec<Sender<FlowMessage>>) -> PluginExecResult {
+async fn run(brokers: Vec<String>, config: Config, rx: &Vec<Sender<FlowMessage>>) -> PluginExecResult {
     let mut result = PluginExecResult::default();
 
-    let jops_params = JsonOps::new(Value::Object(params));
+    let mut client_config = ClientConfig::new();
 
-    debug!("Job params: {:?}", jops_params);
-    let brokers: Vec<String> = match jops_params.get_value_e("brokers") {
-        Ok(b) => b,
-        Err(e) => {
-            result.status = Status::Ko;
-            result.error = e.to_string();
+    client_config.set("group.id", config.group_id.clone())
+                .set("bootstrap.servers", brokers.join(","))
+                .set("auto.offset.reset", config.offset.clone());
 
-            return result;
-        },
+    match config.log_level.as_str() {
+        "debug" => client_config.set_log_level(RDKafkaLogLevel::Debug),
+        "info" => client_config.set_log_level(RDKafkaLogLevel::Info),
+        "notice" => client_config.set_log_level(RDKafkaLogLevel::Notice),
+        "warning" => client_config.set_log_level(RDKafkaLogLevel::Warning),
+        "error" => client_config.set_log_level(RDKafkaLogLevel::Error),
+        "critical" => client_config.set_log_level(RDKafkaLogLevel::Critical),
+        "alert" => client_config.set_log_level(RDKafkaLogLevel::Alert),
+        "emerg" => client_config.set_log_level(RDKafkaLogLevel::Emerg),
+        _ => client_config.set_log_level(RDKafkaLogLevel::Info),
     };
 
-    let config: ConsumerConfig = match jops_params.get_value_e("consumer") {
-        Ok(c) => c,
-        Err(e) => {
-            result.status = Status::Ko;
-            result.error = e.to_string();
+    for (k, v) in config.options.iter() {
+        match v.as_str() {
+            Some(s) => {
+                client_config.set(k.as_str(), s);
+            },
+            None => (),
+        }
+    }
 
-            return result;
-        },
-    };
-
-    let consumer: StreamConsumer  = match ClientConfig::new()
-        .set("group.id", config.group_id.clone())
-        .set("bootstrap.servers", brokers.join(","))
-        .set("enable.partition.eof", "false")
-        .set("session.timeout.ms", "6000")
-        .set("enable.auto.commit", "true")
-        .set("auto.commit.interval.ms", "1000")
-        .set("enable.auto.offset.store", "false")
-        .set("auto.offset.reset", config.offset.clone())
+    let consumer: StreamConsumer  = match client_config
         .set_log_level(RDKafkaLogLevel::Debug)
         .create() {
             Ok(c) => c,
@@ -139,7 +176,7 @@ async fn run(params: Map<String, Value>, rx: &Vec<Sender<FlowMessage>>) -> Plugi
             },
         };
 
-    let topics: Vec<&str> = config.topics.iter().map(|t| t.name.as_ref()).collect();
+    let topics: Vec<&str> = config.topics.iter().map(|t| t.as_ref()).collect();
 
     if let Err(e) = consumer.subscribe(&topics) {
         result.status = Status::Ko;
@@ -203,7 +240,7 @@ pub fn get_plugin() -> *mut (dyn Plugin + Send + Sync) {
     info!("Plugin KafkaConsumer loaded!");
 
     // Return a raw pointer to an instance of our plugin
-    Box::into_raw(Box::new(KafkaConsumer {}))
+    Box::into_raw(Box::new(KafkaConsumer::default()))
 }
 
 #[cfg(test)]
@@ -222,13 +259,11 @@ mod tests {
     #[tokio::test]
     async fn test_func() {
         //env_logger::init();
-        let consumer = KafkaConsumer{};
+        let mut consumer = KafkaConsumer::default();
 
         let (rx, tx) = bounded::<FlowMessage>(1024);
         let rxs = vec![rx.clone()];
         let txs = vec![tx.clone()];
-
-        let params: Map<String, Value> = Map::new();
 
         let producer: FutureProducer = ClientConfig::new()
             .set("bootstrap.servers", "localhost:29092")
@@ -251,12 +286,27 @@ mod tests {
             Err((e, _)) => println!("Sent eror: {:?}", e),
         }
 
-        let value = json!({"brokers": ["127.0.0.1:29092"], "consumer": {"group_id": "group1", "topics": [{"name": "topic1", "event": "event1"}, {"name": "topic2", "event": "event2"}], "offset": "earliest"}});
+        let value = json!({
+            "brokers": ["localhost:9092"],
+            "consumer": {
+                "group_id": "group1",
+                "topics": ["topic1"],
+                "offset": "earliest",
+                "options": {
+                    "enable.partition.eof": "false",
+                    "session.timeout.ms": "6000",
+                    "enable.auto.commit": "true",
+                    "auto.commit.interval.ms": "1000",
+                    "enable.auto.offset.store": "false"
+                }
+            }
+        });
 
-        params = value.as_object().unwrap().to_owned();
+        let params = value.as_object().unwrap().to_owned();
 
+        consumer.validate_params(params).unwrap();
         tokio::spawn(async move{
-            let _ = consumer.func(params.clone(), &rxs, &vec![]).await;
+            let _ = consumer.func(&rxs, &vec![]).await;
         });
 
         sleep(Duration::from_millis(1000)).await;
