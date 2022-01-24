@@ -1,7 +1,4 @@
-
 extern crate flowrunner;
-use std::os::unix::prelude::OsStrExt;
-
 use flowrunner::plugin::{Plugin, PluginExecResult, Status};
 use flowrunner::message::Message as FlowMessage;
 
@@ -17,11 +14,10 @@ use std::collections::HashMap;
 use anyhow::{anyhow, Result};
 
 //use tokio::sync::*;
-use async_channel::{Sender, Receiver, bounded};
-use tokio::runtime::Runtime;
+use async_channel::{Sender, Receiver};
 use async_trait::async_trait;
 
-use log::{info, error, debug};
+use log::debug;
 
 use reqwest::{Method, StatusCode, Body};
 use reqwest::header::{HeaderName, HeaderValue, HeaderMap};
@@ -48,6 +44,12 @@ impl Plugin for Uri {
 
     fn get_description(&self) -> String {
         env!("CARGO_PKG_DESCRIPTION").to_string()
+    }
+
+    fn get_params(&self) -> Map<String, Value> {
+        let params: Map<String, Value> = Map::new();
+
+        params
     }
 
     fn validate_params(&mut self, params: Map<String, Value>) -> Result<()> {
@@ -91,7 +93,7 @@ impl Plugin for Uri {
                     self.headers.insert(header, value);
                 }
             },
-            Err(e) => {
+            Err(_) => {
                 //return Err(anyhow!(e));
                 self.headers = HeaderMap::new();
             },
@@ -107,7 +109,7 @@ impl Plugin for Uri {
                     }
                 }
             },
-            Err(e) => {
+            Err(_) => {
                 //return Err(anyhow!(e));
                 self.status_codes = vec![StatusCode::OK];
             },
@@ -127,7 +129,7 @@ impl Plugin for Uri {
         Ok(())
     }
 
-    async fn func(&self, params: Map<String, Value>, rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
+    async fn func(&self, _rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
         env_logger::init();
 
         let mut result = PluginExecResult::default();
@@ -215,12 +217,6 @@ impl Plugin for Uri {
     }
 }
 
-fn get_params() -> Map<String, Value> {
-    let params: Map<String, Value> = Map::new();
-
-    params
-}
-
 #[no_mangle]
 pub fn get_plugin() -> *mut (dyn Plugin + Send + Sync) {
     debug!("Plugin Uri loaded!");
@@ -263,7 +259,7 @@ mod tests {
         let txs = Vec::<Sender<FlowMessage>>::new();
         let rxs = Vec::<Receiver<FlowMessage>>::new();
 
-        let result = uri.func(params.clone(), &txs, &rxs).await;
+        let result = uri.func(&txs, &rxs).await;
 
         println!("{result:#?}");
     }

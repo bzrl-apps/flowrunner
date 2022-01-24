@@ -133,24 +133,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "builtin-uri"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-channel",
- "async-trait",
- "env_logger",
- "flowrunner",
- "json_ops",
- "log",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "builtin_kafka_consumer"
+name = "builtin-kafka-consumer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -167,7 +150,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "builtin_shell"
+name = "builtin-shell"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -175,7 +158,25 @@ dependencies = [
  "async-trait",
  "env_logger",
  "flowrunner",
+ "json_ops",
  "log",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "builtin-uri"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "async-trait",
+ "env_logger",
+ "flowrunner",
+ "json_ops",
+ "log",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",
