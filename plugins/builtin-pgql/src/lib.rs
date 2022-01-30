@@ -157,6 +157,11 @@ impl Plugin for Pgql {
             },
         };
 
+        let transaction = match pool.begin().await {
+            Ok(tx) => tx,
+            Err(e) => { return_plugin_exec_result_err!(result, e.to_string()); },
+        };
+
         for (idx, st) in self.stmts.iter().enumerate() {
             let cond = st.cond.clone();
 
@@ -200,6 +205,8 @@ impl Plugin for Pgql {
                             result.output.insert(idx.to_string(), rows);
                         },
                         Err(e) => {
+                            transaction.rollback();
+
                             return_plugin_exec_result_err!(result, e.to_string());
                         },
                     };
@@ -215,12 +222,16 @@ impl Plugin for Pgql {
                             result.output.insert(idx.to_string(), Value::Number(Number::from(res.rows_affected())));
                         },
                         Err(e) => {
+                            transaction.rollback();
+
                             return_plugin_exec_result_err!(result, e.to_string());
                         }
                     };
                 }
             }
         }
+
+        transaction.commit();
 
         result.status = Status::Ok;
 
