@@ -32,3 +32,12 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_JMX_PORT: 9101
       KAFKA_JMX_HOSTNAME: localhost
+
+  postgres:
+    image: "postgres:14" # use latest official postgres version
+    environment:
+      POSTGRES_PASSWORD: plezi
+    volumes:
+      - ./init-user-db.sh:/docker-entrypoint-initdb.d/init-user-db.sh
+    ports:
+      - "5432:5432"

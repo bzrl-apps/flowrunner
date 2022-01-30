@@ -43,6 +43,18 @@ macro_rules! plugin_exec_result {
     }
 }
 
+#[macro_export]
+macro_rules! return_plugin_exec_result_err {
+    ($result:expr, $err:expr) => {
+        {
+            $result.status = Status::Ko;
+            $result.error = $err;
+
+            return $result;
+        }
+    }
+}
+
 // The trait that must be implemented by plugins to allow them to handle
 // commands.
 #[async_trait]
