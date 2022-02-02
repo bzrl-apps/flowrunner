@@ -27,8 +27,11 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # SQL
-sqlx = { version = "0.5.1", features = [ "postgres", "runtime-tokio-rustls", "chrono" ] }
+sqlx = { version = "0.5.1", features = [ "postgres", "runtime-tokio-rustls", "tls", "all-types" ] }
 chrono = "0.4"
+ipnetwork = "0.18"
+uuid = "0.8"
+mac_address = "1"
 
 # Eval
 evalexpr = "7"

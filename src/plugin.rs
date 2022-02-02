@@ -27,34 +27,6 @@ use log::{info, debug};
 
 use crate::message::Message as FlowMessage;
 
-#[macro_export]
-macro_rules! plugin_exec_result {
-    ($status:expr, $err:expr, $( $key:expr => $val:expr), *) => {
-        {
-            let mut result = PluginExecResult {
-                status: $status,
-                error: $err.to_string(),
-                output: serde_json::Map::new()
-            };
-
-            $( result.output.insert($key.to_string(), $val); )*
-            result
-        }
-    }
-}
-
-#[macro_export]
-macro_rules! return_plugin_exec_result_err {
-    ($result:expr, $err:expr) => {
-        {
-            $result.status = Status::Ko;
-            $result.error = $err;
-
-            return $result;
-        }
-    }
-}
-
 // The trait that must be implemented by plugins to allow them to handle
 // commands.
 #[async_trait]
