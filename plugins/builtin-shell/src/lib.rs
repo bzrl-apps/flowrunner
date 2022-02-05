@@ -7,7 +7,7 @@ use json_ops::JsonOps;
 
 //use std::collections::HashMap;
 use serde_json::value::Value;
-use serde_json::{Map, Number};
+use serde_json::{Map, Number, json};
 
 use anyhow::{anyhow, Result};
 
@@ -74,12 +74,17 @@ impl Plugin for Shell {
                 if o.status.success() {
                     result.status = Status::Ok;
                     result.output.insert("rc".to_string(), Value::Number(Number::from(0)));
-                    result.output.insert("stdout".to_string(), Value::String(String::from_utf8(o.stdout).unwrap_or("".to_string())));
+
+                    let str_output = String::from_utf8(o.stdout).unwrap_or("".to_string());
+                    result.output.insert("stdout".to_string(), serde_json::from_str(&str_output).unwrap_or(Value::String(str_output)));
+
                 } else {
                     result.status = Status::Ko;
                     result.error = String::from_utf8(o.stderr.clone()).unwrap_or("".to_string());
                     result.output.insert("rc".to_string(), Value::Number(Number::from(o.status.code().unwrap_or(-1))));
-                    result.output.insert("stderr".to_string(), Value::String(String::from_utf8(o.stderr).unwrap_or("".to_string())));
+
+                    let str_output = String::from_utf8(o.stderr).unwrap_or("".to_string());
+                    result.output.insert("stderr".to_string(), serde_json::from_str(&str_output).unwrap_or(Value::String(str_output)));
                 }
 
                 return result;
