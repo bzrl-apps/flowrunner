@@ -1,7 +1,7 @@
+#[macro_use]
 extern crate flowrunner;
 use flowrunner::plugin::{Plugin, PluginExecResult, Status};
 use flowrunner::message::Message as FlowMessage;
-use flowrunner::return_plugin_exec_result_err;
 
 extern crate json_ops;
 use json_ops::JsonOps;
@@ -15,6 +15,7 @@ use anyhow::{anyhow, Result};
 
 //use tokio::sync::*;
 use async_channel::{Sender, Receiver};
+use tokio::runtime::Runtime;
 use async_trait::async_trait;
 
 use sqlx::postgres::{PgPoolOptions, PgRow};
@@ -258,6 +259,9 @@ impl Plugin for Pgql {
     async fn func(&self, _rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
        let _ =  env_logger::try_init();
 
+        let rt = Runtime::new().unwrap();
+        let _guard = rt.enter();
+
         let mut result = PluginExecResult::default();
 
         let pool = match PgPoolOptions::new()
@@ -288,6 +292,8 @@ impl Plugin for Pgql {
                     for p in st.params.iter() {
                         bind_query!(qry, p);
                     }
+
+                    debug!("Executing query: {}", stmt);
 
                     // Fetch data according to fetch type
                     let res = match st.fetch.as_str() {
@@ -328,6 +334,8 @@ impl Plugin for Pgql {
                     for p in st.params.iter() {
                         bind_query!(qry, p);
                     }
+
+                    debug!("Executing statement: {}", stmt);
 
                     match qry.execute(&mut transaction).await {
                         Ok(res) => {

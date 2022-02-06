@@ -41,3 +41,6 @@ evalexpr = "7"
 
 # Regex
 regex = "1"
+
+[lib]
+crate-type = ["dylib"]
