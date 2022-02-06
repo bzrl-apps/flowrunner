@@ -4,7 +4,7 @@ use std::fs::File;
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value as yamlValue};
 use serde_json::Map;
-use serde_json::value::Value as jsonValue;
+use serde_json::Value as jsonValue;
 
 use anyhow::{anyhow, Result};
 
@@ -15,6 +15,7 @@ use crate::{
     job::{Task, Job},
     utils,
     source::Source,
+    sink::Sink,
 };
 
 use crate::message::Message as FlowMessage;
@@ -48,6 +49,8 @@ pub struct Flow {
     pub sources: Vec<Source>,
     #[serde(default)]
 	pub jobs: Vec<Job>,
+    #[serde(default)]
+    pub sinks: Vec<Sink>,
     //#[serde(default)]
 	//pub inventory: Inventory,
 
@@ -72,6 +75,7 @@ impl Default for Flow {
             kind: Kind::Action,
             sources: vec![],
             jobs: vec![],
+            sinks: vec![],
             remote_plugin_dir: "".to_string(),
             remote_exec_dir: "".to_string(),
             inventory_file: "".to_string(),
@@ -111,8 +115,8 @@ impl Flow {
                 // the number of jobs. Each job will receive messages from all sources
                 let jobs = self.jobs.clone();
                 for (i, mut job) in jobs.into_iter().enumerate() {
-                    let (rx, tx) = bounded::<FlowMessage>(1024);
-                    job.tx.push(tx);
+                    let (rx_src_job, tx_src_job) = bounded::<FlowMessage>(1024);
+                    job.tx.push(tx_src_job);
 
                     // Report global flow settings in job context
                     job.context.insert("variables".to_string(), jsonValue::from(self.variables.clone()));
@@ -121,13 +125,32 @@ impl Flow {
 
                     let srcs = self.sources.clone();
                     for (j, mut src) in srcs.into_iter().enumerate() {
-                        src.rx.push(rx.clone());
+                        src.rx.push(rx_src_job.clone());
                         self.sources[j] = src;
+                    }
+                }
+
+                // Prepare messaging channels between jobs & sinks
+                let sinks = self.sinks.clone();
+                for (i, mut sink) in sinks.into_iter().enumerate() {
+                    let (rx_job_sink, tx_job_sink) = bounded::<FlowMessage>(1024);
+                    sink.tx.push(tx_job_sink);
+
+                    // Report global flow settings in job context
+                    sink.context.insert("variables".to_string(), jsonValue::from(self.variables.clone()));
+
+                    self.sinks[i] = sink;
+
+                    let jobs = self.jobs.clone();
+                    for (j, mut job) in jobs.into_iter().enumerate() {
+                        job.rx.push(rx_job_sink.clone());
+                        self.jobs[j] = job;
                     }
                 }
 
                 self.launch_source_threads().await;
                 self.launch_job_threads().await;
+                self.launch_sink_threads().await;
             },
             _ => {
                 info!("Flow kind: Action");
@@ -167,6 +190,16 @@ impl Flow {
             Err(_) => println!("Receving jobs result: sender dropped"),
         }
     }
+
+    async fn launch_sink_threads(&self) {
+        // Launch sink threads
+        let sinks_cloned = self.sinks.clone();
+        tokio::spawn(async move {
+            if let Err(e) = run_all_sinks(sinks_cloned).await {
+                error!("{}", e.to_string());
+            }
+        });
+    }
 }
 
 async fn run_all_sources(sources: Vec<Source>) -> Result<()> {
@@ -176,6 +209,22 @@ async fn run_all_sources(sources: Vec<Source>) -> Result<()> {
         let mut src_cloned = s.clone();
         tokio::spawn(async move {
             match src_cloned.run().await {
+                Ok(()) => (),
+                Err(e) => error!("{}", e.to_string()),
+            }
+        });
+    }
+
+    Ok(())
+}
+
+async fn run_all_sinks(sinks: Vec<Sink>) -> Result<()> {
+    for s in sinks.iter() {
+        info!("Executing sink {}, nb of rx {}", s.name, s.rx.len());
+
+        let mut sink_cloned = s.clone();
+        tokio::spawn(async move {
+            match sink_cloned.run().await {
                 Ok(()) => (),
                 Err(e) => error!("{}", e.to_string()),
             }
@@ -268,6 +317,7 @@ fn parse(mapping: Mapping) -> Result<Flow> {
         }
     }
 
+    // Parse SOURCES
     flow.sources = match mapping.get(&yamlValue::String("sources".to_string())) {
         Some(srcs) => {
             match srcs.as_sequence() {
@@ -321,6 +371,7 @@ fn parse(mapping: Mapping) -> Result<Flow> {
         None => Vec::new(),
     };
 
+    // Parse JOBS
     flow.jobs = match mapping.get(&yamlValue::String("jobs".to_string())) {
         Some(js) => {
             match js.as_sequence() {
@@ -428,6 +479,60 @@ fn parse(mapping: Mapping) -> Result<Flow> {
         None => Vec::new(),
     };
 
+    // Parse SINKS
+    flow.sinks = match mapping.get(&yamlValue::String("sinks".to_string())) {
+        Some(sks) => {
+            match sks.as_sequence() {
+                Some(seq) => {
+                    let mut sinks: Vec<Sink> = Vec::new();
+                    let mut sink_count = 1;
+
+                    for sk in seq.iter() {
+                        let mut s = Sink::default();
+
+                        let default_sinkname = "sink-".to_owned() + &sink_count.to_string();
+
+                        // Check name
+                        if let Some(v) = sk.get(yamlValue::String("name".to_string())) {
+                            s.name = v.as_str().unwrap_or(&default_sinkname).to_string();
+                        } else {
+                            s.name = default_sinkname.clone();
+                        }
+
+                        // Check plugin
+                        if let Some(v) = sk.get(yamlValue::String("plugin".to_string())) {
+                            s.plugin = v.as_str().unwrap_or("").to_string();
+                        }
+
+                        if s.plugin == "" {
+                            return Err(anyhow!("Plugin name can not be empty!"));
+                        }
+
+                        if let Some(v1) = sk.get(yamlValue::String("params".to_string())) {
+                            let mut params = Map::new();
+
+                            if let Some(v2) = v1.as_mapping() {
+                                for (k, v) in v2.iter() {
+                                    params.insert(k.as_str().unwrap_or("").to_string(), utils::convert_value_yaml_to_json(v)?);
+                                }
+                            }
+
+                            s.params = params;
+                        }
+
+                        sinks.push(s);
+
+                        sink_count = sink_count + 1;
+                    }
+
+                    sinks
+                },
+                None => Vec::new(),
+            }
+        },
+        None => Vec::new(),
+    };
+
     if let Some(s) = mapping.get(&yamlValue::String("remote_plugin_dir".to_string())) {
         if let Some(v) = s.as_str() {
             flow.remote_plugin_dir = v.to_string();
@@ -458,15 +563,16 @@ fn parse(mapping: Mapping) -> Result<Flow> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::job::Status;
     use crate::plugin::PluginRegistry;
     use tokio::time::{sleep, Duration};
-    use serde_json::value::Number;
+    use serde_json::Number;
     use rdkafka::{
         config::ClientConfig,
         //message::{Headers, Message},
         producer::future_producer::{FutureProducer, FutureRecord},
     };
+
+    use json_ops::json_map;
 
     #[test]
     fn test_new_from_str() {
@@ -490,10 +596,8 @@ sources:
       consumer:
         group_id: group1
         topics:
-        - name: topic1
-          event: event1
-        - name: topic2
-          event: event2
+        - topic1
+        - topic2
         offset: earliest
   - plugin: kafka
     params:
@@ -502,8 +606,7 @@ sources:
       consumer:
         group_id: group2
         topics:
-        - name: topic2
-          event: event2
+        - topic2
         offset: earliest
 jobs:
   - hosts: host1
@@ -537,6 +640,17 @@ jobs:
     - shell:
         params:
           cmd: "echo task1"
+
+sinks:
+- name: pg1
+  plugin: builtin-pgql
+  params:
+    conn_str: "postgres://localhost:5432/flowrunner"
+    max_conn: 5
+    stmts:
+    - stmt: "SELECT * FROM users;"
+      cond: "true"
+      fetch: "one"
 "#;
 
         let flow =  Flow::new_from_str(content);
@@ -551,30 +665,18 @@ jobs:
         let mut params_src1 = Map::new();
         params_src1.insert("brokers".to_string(), jsonValue::Array(vec![jsonValue::String("127.0.0.1:1234".to_string())]));
 
-        let mut params_src1_topic1 = Map::new();
-        params_src1_topic1.insert("name".to_string(), jsonValue::String("topic1".to_string()));
-        params_src1_topic1.insert("event".to_string(), jsonValue::String("event1".to_string()));
-
-        let mut params_src1_topic2 = Map::new();
-        params_src1_topic2.insert("name".to_string(), jsonValue::String("topic2".to_string()));
-        params_src1_topic2.insert("event".to_string(), jsonValue::String("event2".to_string()));
-
         let mut params_src1_consumer = Map::new();
         params_src1_consumer.insert("group_id".to_string(), jsonValue::String("group1".to_string()));
-        params_src1_consumer.insert("topics".to_string(), jsonValue::Array(vec![jsonValue::Object(params_src1_topic1), jsonValue::Object(params_src1_topic2)]));
+        params_src1_consumer.insert("topics".to_string(), jsonValue::Array(vec![jsonValue::String("topic1".to_string()), jsonValue::String("topic2".to_string())]));
         params_src1_consumer.insert("offset".to_string(), jsonValue::String("earliest".to_string()));
         params_src1.insert("consumer".to_string(), jsonValue::Object(params_src1_consumer));
 
         let mut params_src2 = Map::new();
         params_src2.insert("brokers".to_string(), jsonValue::Array(vec![jsonValue::String("127.0.0.1:1234".to_string())]));
 
-        let mut params_src2_topic2 = Map::new();
-        params_src2_topic2.insert("name".to_string(), jsonValue::String("topic2".to_string()));
-        params_src2_topic2.insert("event".to_string(), jsonValue::String("event2".to_string()));
-
         let mut params_src2_consumer = Map::new();
         params_src2_consumer.insert("group_id".to_string(), jsonValue::String("group2".to_string()));
-        params_src2_consumer.insert("topics".to_string(), jsonValue::Array(vec![jsonValue::Object(params_src2_topic2)]));
+        params_src2_consumer.insert("topics".to_string(), jsonValue::Array(vec![jsonValue::String("topic2".to_string())]));
         params_src2_consumer.insert("offset".to_string(), jsonValue::String("earliest".to_string()));
         params_src2.insert("consumer".to_string(), jsonValue::Object(params_src2_consumer));
 
@@ -591,6 +693,29 @@ jobs:
             name: "src-2".to_string(),
             plugin: "kafka".to_string(),
             params: params_src2,
+            rx: vec![],
+            tx: vec![],
+        });
+
+
+        let params_sink1 = json_map!(
+            "conn_str" => jsonValue::String("postgres://localhost:5432/flowrunner".to_string()),
+            "max_conn" => jsonValue::Number(Number::from(5)),
+            "stmts" => jsonValue::Array(vec![
+                jsonValue::Object(json_map!(
+                    "stmt" => jsonValue::String("SELECT * FROM users;".to_string()),
+                    "cond" => jsonValue::String("true".to_string()),
+                    "fetch" => jsonValue::String("one".to_string())
+                ))
+            ])
+        );
+
+        let mut sinks = Vec::new();
+        sinks.push(Sink {
+            name: "pg1".to_string(),
+            plugin: "builtin-pgql".to_string(),
+            params: params_sink1,
+            context: Map::new(),
             rx: vec![],
             tx: vec![],
         });
@@ -666,8 +791,7 @@ jobs:
             start: None,
             tasks: job1_tasks,
             context: Map::new(),
-            status: Status::Ko,
-            result: HashMap::new(),
+            result: Map::new(),
             rx: vec![],
             tx: vec![],
         });
@@ -678,8 +802,7 @@ jobs:
             start: None,
             tasks: job2_tasks,
             context: Map::new(),
-            status: Status::Ko,
-            result: HashMap::new(),
+            result: Map::new(),
             rx: vec![],
             tx: vec![],
         });
@@ -690,8 +813,7 @@ jobs:
             start: None,
             tasks: job3_tasks,
             context: Map::new(),
-            status: Status::Ko,
-            result: HashMap::new(),
+            result: Map::new(),
             rx: vec![],
             tx: vec![],
         });
@@ -702,11 +824,11 @@ jobs:
             kind: Kind::Action,
             sources,
             jobs,
+            sinks,
             remote_plugin_dir: "".to_string(),
             remote_exec_dir: "".to_string(),
             inventory_file: "".to_string(),
             is_on_remote: false,
-            result: HashMap::new(),
         };
 
         assert_eq!(flow.unwrap(), expected);

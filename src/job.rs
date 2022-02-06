@@ -8,20 +8,19 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use log::{info, debug, error, warn};
-use envmnt::{ExpandOptions, ExpansionType};
-use tera::{Tera, Context};
 
 //use tokio::sync::mpsc::*;
 use async_channel::*;
 
 use crate::plugin::{PluginRegistry, PluginExecResult, Status as PluginStatus};
 use crate::message::Message as FlowMessage;
+use crate::utils::*;
 
 #[macro_export]
 macro_rules! job_result {
     ($( $key:expr => $val:expr ), *) => {
         {
-            let mut result = HashMap::<String, PluginExecResult>::new();
+            let mut result = Map::<String, Value>::new();
             $( result.insert($key.to_string(), $val); )*
             result
         }
@@ -43,7 +42,7 @@ pub struct Job {
 	pub context: Map<String, Value>,
 
     #[serde(default)]
-	pub result: HashMap<String, PluginExecResult>,
+	pub result: Map<String, Value>,
 
     #[serde(skip_serializing, skip_deserializing)]
 	pub rx: Vec<Sender<FlowMessage>>,
@@ -93,7 +92,7 @@ impl PartialEq for Job {
 
 impl Job {
     pub async fn run(&mut self, tasks: Option<&str>) -> Result<()> {
-        info!("JOB RUN STARTED: job: {}, hosts: {}", self.name, self.hosts);
+        info!("JOB RUN STARTED: job: {}, hosts: {}, nb rx: {}, nb tx: {}", self.name, self.hosts, self.rx.len(), self.tx.len());
         debug!("Job context: {:?}", self.context);
 
         // Check the name of all tasks indicated in taskflow
@@ -110,7 +109,9 @@ impl Job {
                     // Add message received as data in job context
                     Ok(msg) => {
                         match msg {
-                            FlowMessage::Json(v) => { self.context.insert("data".to_string(), v); },
+                            FlowMessage::Json(v) => {
+                                self.context.insert("data".to_string(), v);
+                            },
                             _ => {
                                 error!("Message received is not Message::Json type");
                                 continue;
@@ -123,6 +124,14 @@ impl Job {
                         } else {
                             // Run complete taskflow by running the first task
                             self.run_all_tasks(self.start.clone()).await?;
+                        }
+
+                        for rx1 in self.rx.iter() {
+                            let msg = FlowMessage::Json(Value::Object(self.result.clone()));
+                            match rx1.send(msg).await {
+                                Ok(()) => (),
+                                Err(e) => error!("{}", e.to_string()),
+                            };
                         }
                     },
                     Err(e) => { error!("{}", e.to_string()); break; },
@@ -157,7 +166,7 @@ impl Job {
                 Some(mut plugin) => {
                     plugin.validate_params(t.params.clone())?;
                     let res = plugin.func(&self.rx, &self.tx).await;
-                    self.result.insert(t.name.clone(), res.clone());
+                    self.result.insert(t.name.clone(), serde_json::to_value(res.clone())?);
 
                     info!("Task result: name {}, res: {:?}",  t.name.clone(), res);
 
@@ -193,7 +202,7 @@ impl Job {
                         Some(mut plugin) => {
                             plugin.validate_params(t.params.clone())?;
                             let res = plugin.func(&self.rx, &self.tx).await;
-                            self.result.insert(t.name.clone(), res.clone());
+                            self.result.insert(t.name.clone(), serde_json::to_value(res.clone())?);
 
                             info!("Task result: name {}, res: {:?}",  t.name.clone(), res);
                         },
@@ -242,7 +251,7 @@ impl Job {
     fn render_task_template(&self, task: &mut Task) -> Result<()> {
         let mut data: Map<String, Value> = Map::new();
 
-        data.insert("context".to_string(), Value::from(self.context.clone()));
+        data.insert("context".to_string(), Value::Object(self.context.clone()));
 
         // Convert job'Vs result HashMap to serde_json Map
         let mut job_result: Map<String, Value> = Map::new();
@@ -266,85 +275,13 @@ impl Job {
 
 }
 
-fn expand_env_map(m: &mut Map<String, Value>) {
-    for (k, v) in m.clone().into_iter() {
-        m.insert(k, expand_env_value(&v));
-    }
-}
-
-fn expand_env_value(value: &Value) -> Value {
-    let mut options = ExpandOptions::new();
-    options.expansion_type = Some(ExpansionType::Unix);
-
-    match value {
-        Value::Array(arr) => {
-            let mut v: Vec<Value> = vec![];
-            for e in arr.into_iter() {
-                let expanded_v = expand_env_value(e);
-                v.push(expanded_v);
-            }
-
-            return Value::Array(v);
-        },
-        Value::Object(map) => {
-            let mut m: Map<String, Value> = Map::new();
-            for (k, v) in map.into_iter() {
-                let expanded_v = expand_env_value(v);
-                m.insert(k.to_string(), expanded_v);
-            }
-
-            return Value::Object(m);
-        },
-        _ => Value::String(envmnt::expand(value.as_str().unwrap_or(""), Some(options))),
-    }
-}
-
-fn render_param_template(task: &str, key: &str, value: &Value, data: &Map<String, Value>) -> Result<Value> {
-    debug!("Rendering param templating: task {}, key {}, value {:?}, data {:?}", task, key, value, data);
-
-    let mut tera = Tera::default();
-    let exp_env_v = expand_env_value(value);
-
-    let context = match Context::from_value(Value::Object(data.to_owned())) {
-        Ok(c) => c,
-        Err(e) => return Err(anyhow!(e)),
-    };
-
-    match exp_env_v {
-        Value::Array(arr) => {
-            let mut v: Vec<Value> = vec![];
-            for e in arr.into_iter() {
-                let rendered_v = render_param_template(task, key, &e, data)?;
-                v.push(rendered_v);
-            }
-
-            return Ok(Value::Array(v));
-        },
-        Value::Object(map) => {
-            let mut m: Map<String, Value> = Map::new();
-            for (k, v) in map.into_iter() {
-                let rendered_v = render_param_template(task, key, &v, data)?;
-                m.insert(k.to_string(), rendered_v);
-            }
-
-            return Ok(Value::Object(m));
-        },
-        _ => {
-            match tera.render_str(exp_env_v.as_str().unwrap_or(""), &context) {
-                Ok(s) => Ok(Value::String(s)),
-                Err(e) => Err(anyhow!(e))
-            }
-        },
-    }
-
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::value::Value as jsonValue;
     use serde_json::{Map, Number, json};
     use crate::plugin::PluginRegistry;
+    use crate::plugin_exec_result;
 
     #[test]
     fn test_check_tasks() {
@@ -472,22 +409,22 @@ mod tests {
         job.run(None).await.unwrap();
 
         let mut expected = job_result!(
-            "task-1" => plugin_exec_result!(
+            "task-1" => serde_json::to_value(plugin_exec_result!(
                         PluginStatus::Ok,
                         "",
                         "rc" => jsonValue::Number(Number::from(0)),
-                        "stdout" => jsonValue::String("task1\n".to_string())),
-            "task-2" => plugin_exec_result!(
+                        "stdout" => jsonValue::String("task1\n".to_string()))).unwrap(),
+            "task-2" => serde_json::to_value(plugin_exec_result!(
                         PluginStatus::Ok,
                         "",
                         "rc" => jsonValue::Number(Number::from(0)),
-                        "stdout" => jsonValue::String("task2\n".to_string())),
-            "task-4" => plugin_exec_result!(
+                        "stdout" => jsonValue::String("task2\n".to_string()))).unwrap(),
+            "task-4" => serde_json::to_value(plugin_exec_result!(
                         PluginStatus::Ok,
                         "",
                         "rc" => jsonValue::Number(Number::from(0)),
-                        "stdout" => jsonValue::String("task4\n".to_string()))
-        );
+                        "stdout" => jsonValue::String("task4\n".to_string()))).unwrap()
+            );
 
         assert_eq!(expected, job.result);
 
@@ -496,26 +433,26 @@ mod tests {
         task3.on_success = "task-4".to_string();
 
         expected = job_result!(
-            "task-1" => plugin_exec_result!(
+            "task-1" => serde_json::to_value(plugin_exec_result!(
                         PluginStatus::Ok,
                         "",
                         "rc" => jsonValue::Number(Number::from(0)),
-                        "stdout" => jsonValue::String("task1\n".to_string())),
-            "task-2" => plugin_exec_result!(
+                        "stdout" => jsonValue::String("task1\n".to_string()))).unwrap(),
+            "task-2" => serde_json::to_value(plugin_exec_result!(
                         PluginStatus::Ok,
                         "",
                         "rc" => jsonValue::Number(Number::from(0)),
-                        "stdout" => jsonValue::String("task2\n".to_string())),
-            "task-3" => plugin_exec_result!(
+                        "stdout" => jsonValue::String("task2\n".to_string()))).unwrap(),
+            "task-3" => serde_json::to_value(plugin_exec_result!(
                         PluginStatus::Ok,
                         "",
                         "rc" => jsonValue::Number(Number::from(0)),
-                        "stdout" => jsonValue::String("task3\n".to_string())),
-            "task-4" => plugin_exec_result!(
+                        "stdout" => jsonValue::String("task3\n".to_string()))).unwrap(),
+            "task-4" => serde_json::to_value(plugin_exec_result!(
                         PluginStatus::Ok,
                         "",
                         "rc" => jsonValue::Number(Number::from(0)),
-                        "stdout" => jsonValue::String("task4\n".to_string()))
+                        "stdout" => jsonValue::String("task4\n".to_string()))).unwrap()
         );
 
         job.result.clear();
@@ -530,14 +467,14 @@ mod tests {
         task1.on_failure = "task-4".to_string();
 
         expected = job_result!(
-            "task-1" => plugin_exec_result!(
+            "task-1" => serde_json::to_value(plugin_exec_result!(
                         PluginStatus::Ko,
-                        "No such file or directory (os error 2)",),
-            "task-4" => plugin_exec_result!(
+                        "No such file or directory (os error 2)",)).unwrap(),
+            "task-4" => serde_json::to_value(plugin_exec_result!(
                         PluginStatus::Ok,
                         "",
                         "rc" => jsonValue::Number(Number::from(0)),
-                        "stdout" => jsonValue::String("task4\n".to_string()))
+                        "stdout" => jsonValue::String("task4\n".to_string()))).unwrap()
         );
 
         job.result.clear();
@@ -606,16 +543,17 @@ mod tests {
         job.run(Some("task-2,task-3")).await.unwrap();
 
         let mut expected = job_result!(
-            "task-2" => plugin_exec_result!(
+            "task-2" => serde_json::to_value(plugin_exec_result!(
                         PluginStatus::Ok,
                         "",
                         "rc" => jsonValue::Number(Number::from(0)),
-                        "stdout" => jsonValue::String("task2\n".to_string())),
-            "task-3" => plugin_exec_result!(
+                        "stdout" => jsonValue::String("task2\n".to_string()))).unwrap(),
+            "task-3" => serde_json::to_value(plugin_exec_result!(
                         PluginStatus::Ok,
                         "",
                         "rc" => jsonValue::Number(Number::from(0)),
                         "stdout" => jsonValue::String("task3\n".to_string()))
+        ).unwrap()
         );
 
         assert_eq!(expected, job.result);
@@ -625,14 +563,15 @@ mod tests {
         task1.params = params_task1.clone();
 
         expected = job_result!(
-            "task-1" => plugin_exec_result!(
+            "task-1" => serde_json::to_value(plugin_exec_result!(
                         PluginStatus::Ko,
-                        "No such file or directory (os error 2)",),
-            "task-4" => plugin_exec_result!(
+                        "No such file or directory (os error 2)",)).unwrap(),
+            "task-4" => serde_json::to_value(plugin_exec_result!(
                         PluginStatus::Ok,
                         "",
                         "rc" => jsonValue::Number(Number::from(0)),
                         "stdout" => jsonValue::String("task4\n".to_string()))
+        ).unwrap()
         );
 
         job.result.clear();
@@ -641,66 +580,6 @@ mod tests {
         job.run(Some("task-1,task-4")).await.unwrap();
 
         assert_eq!(expected, job.result);
-    }
-
-    #[test]
-    fn test_expand_env_map() {
-        env_logger::init();
-
-        let input = json!({
-            "var1": "$VAR1",
-            "var2": [
-                "1",
-                "$VAR21",
-                "3",
-            ],
-            "var3": [
-                "var31",
-                "$VAR32",
-                "var33",
-            ],
-            "var4": {
-                "var41": {
-                    "var411": "var411",
-                    "var412": "${VAR412}"
-                },
-                "var42": "var42",
-                "var43": "$VAR43"
-            }
-        });
-
-        envmnt::set("VAR1", "var1");
-        envmnt::set("VAR21", "2");
-        envmnt::set("VAR32", "var32");
-        envmnt::set("VAR412", "var412");
-        envmnt::set("VAR43", "var43");
-
-        let mut expanded_m = input.as_object().unwrap().to_owned();
-        expand_env_map(&mut expanded_m);
-
-        let expected = json!({
-            "var1": "var1",
-            "var2": [
-                "1",
-                "2",
-                "3",
-            ],
-            "var3": [
-                "var31",
-                "var32",
-                "var33",
-            ],
-            "var4": {
-                "var41": {
-                    "var411": "var411",
-                    "var412": "var412"
-                },
-                "var42": "var42",
-                "var43": "var43"
-            }
-        });
-
-        assert_eq!(expected.as_object().unwrap(), &expanded_m);
     }
 
     #[test]
@@ -763,7 +642,7 @@ mod tests {
         params_expected.insert("param2".to_string(), jsonValue::Array(vec![Value::String("2".to_string()), Value::String("2".to_string()), Value::String("3".to_string())]));
         params_expected.insert("param3".to_string(), jsonValue::String("var412 var412".to_string()));
 
-        let mut expected = Task {
+        let expected = Task {
             name: "task-1".to_string(),
             plugin: "shell".to_string(),
             params: params_expected.clone(),

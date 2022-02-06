@@ -2,6 +2,7 @@
 extern crate lazy_static;
 extern crate log;
 extern crate clap;
+extern crate json_ops;
 
 use log::{info, error};
 use env_logger::Env;
@@ -17,6 +18,7 @@ mod plugin;
 mod flow;
 mod job;
 mod source;
+mod sink;
 mod message;
 mod utils;
 

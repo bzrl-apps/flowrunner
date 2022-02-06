@@ -77,4 +77,8 @@ envmnt = "0.9"
 # Kafka
 rdkafka = { version = "0.25", features = ["default"] }
 
+# Postgres
+sqlx = { version = "0.5.1", features = [ "postgres", "runtime-tokio-rustls", "tls", "all-types" ] }
+
+# Json manipulation
 json_ops = { path = "json-ops" }
