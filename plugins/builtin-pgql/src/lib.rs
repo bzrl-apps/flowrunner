@@ -41,8 +41,14 @@ struct Pgql {
 struct Stmt {
     stmt: String,
     cond: String,
-    params: Vec<Value>,
+    params: Vec<StmtParam>,
     fetch: String
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, Clone)]
+struct StmtParam {
+    value: Value,
+    pg_type: String,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
@@ -157,41 +163,213 @@ impl<'r> FromRow<'r, PgRow> for PgqlRow {
 /// Except for bool, some scalar types, a json string can be any postgres types. So when we get a
 /// json string, we are going to try to convert to one by one.
 macro_rules! bind_query {
-    ($qry:expr, $p:expr) => {
+    ($qry:expr, $p:expr, $result:expr) => {
         {
 
-            match $p {
+            match &$p.value {
                 Value::Bool(b) => $qry = $qry.bind(b),
                 Value::String(s) => {
-                    // Try to conver to DateTime<UTC>
-                    if let Ok(dt) = s.parse::<DateTime<Utc>>() {
-                        $qry = $qry.bind(dt);
-                    } else if let Ok(ndt) = s.parse::<NaiveDateTime>() {
-                        $qry = $qry.bind(ndt);
-                    } else if let Ok(d) = s.parse::<NaiveDate>() {
-                        $qry = $qry.bind(d);
-                    } else if let Ok(t) = s.parse::<NaiveTime>() {
-                        $qry = $qry.bind(t);
-                    } else if let Ok(u) = s.parse::<uuid::Uuid>() {
-                        $qry = $qry.bind(u);
-                    } else if let Ok(m) = s.parse::<mac_address::MacAddress>() {
-                        $qry = $qry.bind(m);
-                    } else {
-                        $qry = $qry.bind(s);
+                    match $p.pg_type.to_lowercase().as_str() {
+                        "bool" => {
+                            let val = match s.parse::<bool>() {
+                                Ok(v) => Some(v),
+                                Err(_) => None,
+                            };
+
+                            $qry = $qry.bind(val);
+                        },
+                        "char" => {
+                            let val = match s.parse::<i8>() {
+                                Ok(v) => Some(v),
+                                Err(_) => None,
+                            };
+
+                            $qry = $qry.bind(val);
+                        },
+                        "int" | "serial" | "int4" => {
+                            let val = match s.parse::<i32>() {
+                                Ok(v) => Some(v),
+                                Err(_) => None,
+                            };
+
+                            $qry = $qry.bind(val);
+                        },
+                        "smallint" | "smallserial" | "int2" => {
+                            let val = match s.parse::<i16>() {
+                                Ok(v) => Some(v),
+                                Err(_) => None,
+                            };
+
+                            $qry = $qry.bind(val);
+                        },
+                        "bigint" | "bigserial" | "int8" => {
+                            let val = match s.parse::<i64>() {
+                                Ok(v) => Some(v),
+                                Err(_) => None,
+                            };
+
+                            $qry = $qry.bind(val);
+                        },
+                        "double precision" | "float8" | "real" | "float4" => {
+                            let val = match s.parse::<f64>() {
+                                Ok(v) => Some(v),
+                                Err(_) => None,
+                            };
+
+                            $qry = $qry.bind(val);
+                        },
+                        "varchar" | "char(n)" | "text" | "name" => {
+                            let val = match s.parse::<String>() {
+                                Ok(v) => Some(v),
+                                Err(_) => None,
+                            };
+
+                            $qry = $qry.bind(val);
+                        },
+                        "timestamptz" => {
+                            let val = match s.parse::<DateTime<Utc>>() {
+                                Ok(v) => Some(v),
+                                Err(_) => None,
+                            };
+
+                            $qry = $qry.bind(val);
+                        },
+                        "timestamp" => {
+                            let val = match s.parse::<NaiveDateTime>() {
+                                Ok(v) => Some(v),
+                                Err(_) => None,
+                            };
+
+                            $qry = $qry.bind(val);
+                        },
+                        "date" => {
+                            let val = match s.parse::<NaiveDate>() {
+                                Ok(v) => Some(v),
+                                Err(_) => None,
+                            };
+
+                            $qry = $qry.bind(val);
+                        },
+                        "time" => {
+                            let val = match s.parse::<NaiveTime>() {
+                                Ok(v) => Some(v),
+                                Err(_) => None,
+                            };
+
+                            $qry = $qry.bind(val);
+                        },
+                        "uuid" => {
+                            let val = match s.parse::<uuid::Uuid>() {
+                                Ok(v) => Some(v),
+                                Err(_) => None,
+                            };
+
+                            $qry = $qry.bind(val);
+                        },
+                        //"inet" | "cidr" => {
+                            //let val: ipnetwork::IpNetwork = row.try_get(i)?;
+
+                            //columns.insert(name.to_string(), Value::String(val.to_string()));
+                        //},
+                        "macaddr" => {
+                            let val = match s.parse::<mac_address::MacAddress>() {
+                                Ok(v) => Some(v),
+                                Err(_) => None,
+                            };
+
+                            $qry = $qry.bind(val);
+                        },
+                        "json" | "jsonb" => {
+                            $qry = $qry.bind(s);
+                        },
+                        _ => {
+                            $qry = $qry.bind(s);
+                        },
                     }
                 },
                 Value::Number(n) => {
                     if n.is_f64() {
-                        $qry = $qry.bind(n.as_f64().unwrap());
+                        $qry = $qry.bind(n.as_f64());
                     } else {
-                        $qry = $qry.bind(n.as_i64().unwrap());
+                        $qry = $qry.bind(n.as_i64());
                     }
                 },
-                _ => $qry = $qry.bind($p.as_str().unwrap()),
+                Value::Null => {
+                    match $p.pg_type.to_lowercase().as_str() {
+                        "bool" => {
+                            let val: Option<bool> = None;
+                            $qry = $qry.bind(val);
+                        },
+                        "char" => {
+                            let val: Option<i8> = None;
+                            $qry = $qry.bind(val);
+                        },
+                        "int" | "serial" | "int4" => {
+                            let val: Option<i32> = None;
+                            $qry = $qry.bind(val);
+                        },
+                        "smallint" | "smallserial" | "int2" => {
+                            let val: Option<i16> = None;
+                            $qry = $qry.bind(val);
+                        },
+                        "bigint" | "bigserial" | "int8" => {
+                            let val: Option<i64> = None;
+                            $qry = $qry.bind(val);
+                        },
+                        "double precision" | "float8" | "real" | "float4" => {
+                            let val: Option<f64> = None;
+                            $qry = $qry.bind(val);
+                        },
+                        "varchar" | "char(n)" | "text" | "name" => {
+                            let val: Option<String> = None;
+                            $qry = $qry.bind(val);
+                        },
+                        "timestamptz" => {
+                            let val: Option<DateTime<Utc>> = None;
+                            $qry = $qry.bind(val);
+                        },
+                        "timestamp" => {
+                            let val: Option<NaiveDateTime> = None;
+                            $qry = $qry.bind(val);
+                        },
+                        "date" => {
+                            let val: Option<NaiveDate> = None;
+                            $qry = $qry.bind(val);
+                        },
+                        "time" => {
+                            let val: Option<NaiveTime> = None;
+                            $qry = $qry.bind(val);
+                        },
+                        "uuid" => {
+                            let val: Option<uuid::Uuid> = None;
+                            $qry = $qry.bind(val);
+                        },
+                        //"inet" | "cidr" => {
+                            //let val: ipnetwork::IpNetwork = row.try_get(i)?;
+
+                            //columns.insert(name.to_string(), Value::String(val.to_string()));
+                        //},
+                        "macaddr" => {
+                            let val: Option<mac_address::MacAddress> = None;
+                            $qry = $qry.bind(val);
+                        },
+                        "json" | "jsonb" => {
+                            let val: Option<String> = None;
+                            $qry = $qry.bind(val);
+                        },
+                        _ => {
+                            return_plugin_exec_result_err!($result, format!("Postgres param's type {} not supported for Null value", $p.pg_type));
+                        },
+                    }
+                },
+                _ => {
+                    return_plugin_exec_result_err!($result, "Postgres param value's type not supported".to_string());
+                },
             };
         }
     }
 }
+
 
 #[async_trait]
 impl Plugin for Pgql {
@@ -290,7 +468,7 @@ impl Plugin for Pgql {
                     let mut qry = sqlx::query_as::<_, PgqlRow>(stmt.clone());
 
                     for p in st.params.iter() {
-                        bind_query!(qry, p);
+                        bind_query!(qry, p, result);
                     }
 
                     debug!("Executing query: {}", stmt);
@@ -332,7 +510,7 @@ impl Plugin for Pgql {
                     let mut qry = sqlx::query(stmt.clone());
 
                     for p in st.params.iter() {
-                        bind_query!(qry, p);
+                        bind_query!(qry, p, result);
                     }
 
                     debug!("Executing statement: {}", stmt);
@@ -422,11 +600,12 @@ pub fn get_plugin() -> *mut (dyn Plugin + Send + Sync) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flowrunner::{plugin_exec_result, json_map};
+    use flowrunner::plugin_exec_result;
+    use json_ops::json_map;
+    use tokio::sync::*;
 
-    use sqlx::PgPool;
     //use std::time::Duration;
-    use tokio::time::{sleep, Duration};
+    //use tokio::time::{sleep, Duration};
 
     async fn init_db() {
         let pool = PgPoolOptions::new()
@@ -501,10 +680,10 @@ CREATE TABLE IF NOT EXISTS users (
                     "stmt": "INSERT INTO users(username, password, enabled, age) VALUES ($1, $2, $3, $4);",
                     "cond": "true",
                     "params": [
-                        "test1",
-                        "pass1",
-                        false,
-                        5
+                        {"value": "test1", "pg_type": "varchar"},
+                        {"value": "pass1", "pg_type": "varchar"},
+                        {"value": false, "pg_type": "bool"},
+                        {"value": 5, "pg_type": "int"}
                     ],
                     "fetch": ""
                 },
@@ -512,7 +691,7 @@ CREATE TABLE IF NOT EXISTS users (
                     "stmt": "INSERT INTO users (toto) VALUES ($1);",
                     "cond": "true",
                     "params": [
-                        "test2"
+                        {"value": "test2", "pg_type": "varchar"}
                     ],
                     "fetch": ""
                 }
@@ -528,13 +707,22 @@ CREATE TABLE IF NOT EXISTS users (
 
         pg.validate_params(params.clone()).unwrap();
 
-        let mut result = pg.func(&txs, &rxs).await;
+        let (tx, rx) = oneshot::channel();
+        let pg_cloned = pg.clone();
+        let txs_cloned = txs.clone();
+        let rxs_cloned = rxs.clone();
+        tokio::spawn(async move {
+            let res = pg_cloned.func(&txs_cloned, &rxs_cloned).await;
+            tx.send(res).unwrap();
+        });
 
         let mut expected = plugin_exec_result!(
             Status::Ko,
             "error returned from database: column \"toto\" of relation \"users\" does not exist",
             "0" => Value::Number(Number::from(1))
         );
+
+        let mut result = rx.await.unwrap();
 
         assert_eq!(expected, result);
 
@@ -553,11 +741,11 @@ CREATE TABLE IF NOT EXISTS users (
                     "stmt": "INSERT INTO users(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5);",
                     "cond": "true",
                     "params": [
-                        "test1",
-                        "pass1",
-                        false,
-                        5,
-                        "2022-01-31 01:16:14.043462 UTC"
+                        {"value": "test1", "pg_type": "varchar"},
+                        {"value": "pass1", "pg_type": "varchar"},
+                        {"value": false, "pg_type": "bool"},
+                        {"value": 5, "pg_type": "int"},
+                        {"value": "2022-01-31 01:16:14.043462 UTC", "pg_type": "timestamptz"}
                     ],
                     "fetch": ""
                 },
@@ -565,11 +753,11 @@ CREATE TABLE IF NOT EXISTS users (
                     "stmt": "INSERT INTO users(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5);",
                     "cond": "true",
                     "params": [
-                        "test2",
-                        "pass2",
-                        false,
-                        5,
-                        "2022-01-31 01:16:14.043462 UTC"
+                        {"value": "test2", "pg_type": "varchar"},
+                        {"value": "pass2", "pg_type": "varchar"},
+                        {"value": false, "pg_type": "bool"},
+                        {"value": 5, "pg_type": "int"},
+                        {"value": "2022-01-31 01:16:14.043462 UTC", "pg_type": "timestamptz"}
                     ],
                     "fetch": ""
                 },
@@ -577,11 +765,11 @@ CREATE TABLE IF NOT EXISTS users (
                     "stmt": "INSERT INTO users(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (username) DO UPDATE SET enabled = EXCLUDED.enabled, age = EXCLUDED.age;",
                     "cond": "true",
                     "params": [
-                        "test2",
-                        "pass2",
-                        true,
-                        6,
-                        "2022-01-31 01:16:14.043462 UTC"
+                        {"value": "test2", "pg_type": "varchar"},
+                        {"value": "pass2", "pg_type": "varchar"},
+                        {"value": true, "pg_type": "bool"},
+                        {"value": 6, "pg_type": "int"},
+                        {"value": "2022-01-31 01:16:14.043462 UTC", "pg_type": "timestamptz"}
                     ],
                     "fetch": ""
                 },
@@ -589,11 +777,11 @@ CREATE TABLE IF NOT EXISTS users (
                     "stmt": "INSERT INTO users(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5);",
                     "cond": "true",
                     "params": [
-                        "test3",
-                        "pass3",
-                        false,
-                        7,
-                        "2022-01-31 01:16:14.043462 UTC"
+                        {"value": "test3", "pg_type": "varchar"},
+                        {"value": "pass3", "pg_type": "varchar"},
+                        {"value": false, "pg_type": "bool"},
+                        {"value": 7, "pg_type": "int"},
+                        {"value": "2022-01-31 01:16:14.043462 UTC", "pg_type": "timestamptz"}
                     ],
                     "fetch": ""
                 },
@@ -607,15 +795,17 @@ CREATE TABLE IF NOT EXISTS users (
                     "stmt": "UPDATE users SET created_at = $1::TIMESTAMP WHERE id = $2;",
                     "cond": "true",
                     "params": [
-                        "2999-01-30 11:03:53 UTC",
-                        1
+                        {"value": "2999-01-30 11:03:53 UTC", "pg_type": "timestamptz"},
+                        {"value": 1, "pg_type": "int"}
                     ],
                     "fetch": ""
                 },
                 {
                     "stmt": "DELETE FROM users WHERE id = $1;",
                     "cond": "true",
-                    "params": [3],
+                    "params": [
+                        {"value": 3, "pg_type": "int"}
+                    ],
                     "fetch": ""
                 },
                 {
@@ -632,9 +822,16 @@ CREATE TABLE IF NOT EXISTS users (
 
         pg.validate_params(params.clone()).unwrap();
 
-        result = pg.func(&txs, &rxs).await;
+        let (tx, rx) = oneshot::channel();
+        let pg_cloned = pg.clone();
+        let txs_cloned = txs.clone();
+        let rxs_cloned = rxs.clone();
+        tokio::spawn(async move {
+            let res = pg_cloned.func(&txs_cloned, &rxs_cloned).await;
+            tx.send(res).unwrap();
+        });
 
-        println!("{result:#?}");
+        //println!("{result:#?}");
 
         expected = plugin_exec_result!(
             Status::Ok,
@@ -691,6 +888,7 @@ CREATE TABLE IF NOT EXISTS users (
             ])
         );
 
+        result = rx.await.unwrap();
         assert_eq!(expected, result);
     }
 }

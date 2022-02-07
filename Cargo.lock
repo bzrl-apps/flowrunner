@@ -658,6 +658,7 @@ dependencies = [
  "anyhow",
  "async-channel",
  "async-trait",
+ "chrono",
  "clap",
  "dlopen",
  "dlopen_derive",

@@ -11,7 +11,7 @@ use rdkafka::{
     ClientConfig, producer::FutureProducer,
 };
 
-use sqlx::postgres::PgPoolOptions;
+use sqlx::postgres::{PgPool, PgPoolOptions};
 
 use log::info;
 
@@ -68,7 +68,7 @@ pub async fn init_kafka(topics: &[&str]) {
     }
 }
 
-pub async fn init_db() {
+pub async fn init_db() -> PgPool {
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect("postgres://flowrunner:flowrunner@localhost:5432/flowrunner")
@@ -92,4 +92,6 @@ created_at timestamp with time zone DEFAULT now()
         .execute(&pool)
         .await
         .unwrap();
+
+    pool
 }
