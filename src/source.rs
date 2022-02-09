@@ -46,9 +46,10 @@ impl Source {
 
                 let rx_cloned = self.rx.clone();
                 let tx_cloned = vec![];
+                let sender = self.name.clone();
                 //let result_cloned = result.clone();
                 tokio::spawn(async move {
-                    let res = plugin.func(&rx_cloned, &tx_cloned).await;
+                    let res = plugin.func(Some(sender), &rx_cloned, &tx_cloned).await;
                     if res.status == PluginStatus::Ko {
                         error!("{}", res.error);
                     }

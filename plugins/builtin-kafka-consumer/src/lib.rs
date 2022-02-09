@@ -109,7 +109,7 @@ impl Plugin for KafkaConsumer {
         Ok(())
     }
 
-    async fn func(&self, rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
+    async fn func(&self, sender: Option<String>, rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
         env_logger::init();
 
         let mut result = PluginExecResult::default();
@@ -120,8 +120,9 @@ impl Plugin for KafkaConsumer {
         let brokers_cloned = self.brokers.clone();
         let config_cloned = self.config.clone();
         let rx_cloned = rx.clone();
+        let sender_cloned = sender.clone();
         match tokio::spawn(async move {
-            return run(brokers_cloned, config_cloned, &rx_cloned).await;
+            return run(sender_cloned, brokers_cloned, config_cloned, &rx_cloned).await;
         }).await {
             Ok(r) => r,
             Err(e) => {
@@ -134,7 +135,7 @@ impl Plugin for KafkaConsumer {
     }
 }
 
-async fn run(brokers: Vec<String>, config: Config, rx: &Vec<Sender<FlowMessage>>) -> PluginExecResult {
+async fn run(sender: Option<String>, brokers: Vec<String>, config: Config, rx: &Vec<Sender<FlowMessage>>) -> PluginExecResult {
     let mut result = PluginExecResult::default();
 
     let mut client_config = ClientConfig::new();
@@ -211,7 +212,11 @@ async fn run(brokers: Vec<String>, config: Config, rx: &Vec<Sender<FlowMessage>>
                             },
                         };
 
-                        let msg = FlowMessage::Json(value);
+                        let msg = FlowMessage::JsonWithSender {
+                            sender: sender.clone().unwrap_or(brokers.join(",")),
+                            source: Some(m.topic().to_string()),
+                            value,
+                        };
 
                         for rx1 in rx.iter() {
                             match rx1.send(msg.clone()).await {
@@ -246,6 +251,7 @@ pub fn get_plugin() -> *mut (dyn Plugin + Send + Sync) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use json_ops::json_map;
     use rdkafka::{
         config::ClientConfig,
         //message::{Headers, Message},
@@ -266,7 +272,7 @@ mod tests {
         let txs = vec![tx.clone()];
 
         let producer: FutureProducer = ClientConfig::new()
-            .set("bootstrap.servers", "localhost:29092")
+            .set("bootstrap.servers", "localhost:9092")
             .set("message.timeout.ms", "5000")
             .create().unwrap();
 
@@ -306,7 +312,7 @@ mod tests {
 
         consumer.validate_params(params).unwrap();
         tokio::spawn(async move{
-            let _ = consumer.func(&rxs, &vec![]).await;
+            let _ = consumer.func(None, &rxs, &vec![]).await;
         });
 
         sleep(Duration::from_millis(1000)).await;
@@ -314,6 +320,6 @@ mod tests {
         let result = txs[0].recv().await.unwrap();
 
         //println!("{:?}", msg);
-        assert_eq!(FlowMessage::Json(Value::String(r#"{"message": "hello world"}"#.to_string())), result);
+        assert_eq!(FlowMessage::JsonWithSender{sender: "localhost:9092".to_string(), source: Some("topic1".to_string()), value: Value::Object(json_map!("message" => Value::String("hello world".to_string())))}, result);
     }
 }

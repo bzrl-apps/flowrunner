@@ -58,7 +58,7 @@ impl Plugin for Shell {
         Ok(())
     }
 
-    async fn func(&self, _rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
+    async fn func(&self, _sender: Option<String>, _rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
         //let mut result: Map<String, Value> = Map::new();
         let mut result = PluginExecResult::default();
 
@@ -130,7 +130,7 @@ mod tests {
         expected.output.insert("stdout".to_string(), Value::String("Hello world\n".to_string()));
 
         shell.validate_params(params.clone()).unwrap();
-        let mut result = shell.func(&txs_empty, &rxs_empty).await;
+        let mut result = shell.func(None, &txs_empty, &rxs_empty).await;
         assert_eq!(expected, result);
 
         expected.output.clear();
@@ -144,7 +144,7 @@ mod tests {
         expected.output.insert("stderr".to_string(), Value::String("ls: illegal option -- z\nusage: ls [-@ABCFGHLOPRSTUWabcdefghiklmnopqrstuwx1%] [file ...]\n".to_string()));
 
         shell.validate_params(params.clone()).unwrap();
-        result = shell.func(&txs_empty, &rxs_empty).await;
+        result = shell.func(None, &txs_empty, &rxs_empty).await;
         assert_eq!(expected, result);
 
         expected.output.clear();
@@ -156,7 +156,7 @@ mod tests {
         expected.error = "No such file or directory (os error 2)".to_string();
 
         shell.validate_params(params.clone()).unwrap();
-        result = shell.func(&txs_empty, &rxs_empty).await;
+        result = shell.func(None, &txs_empty, &rxs_empty).await;
         assert_eq!(expected, result);
     }
 }

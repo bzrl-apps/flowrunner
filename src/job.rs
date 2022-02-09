@@ -101,7 +101,9 @@ impl Job {
                     // Add message received as data in job context
                     Ok(msg) => {
                         match msg {
-                            FlowMessage::Json(v) => {
+                            FlowMessage::JsonWithSender{ sender: s, source: src, value: v } => {
+                                self.context.insert("sender".to_string(), Value::String(s));
+                                self.context.insert("source".to_string(), Value::String(src.unwrap_or("".to_string())));
                                 self.context.insert("data".to_string(), v);
                             },
                             _ => {
@@ -119,7 +121,11 @@ impl Job {
                         }
 
                         for rx1 in self.rx.iter() {
-                            let msg = FlowMessage::Json(Value::Object(self.result.clone()));
+                            let msg = FlowMessage::JsonWithSender {
+                                sender: self.name.clone(),
+                                source: None,
+                                value: Value::Object(self.result.clone()),
+                            };
                             match rx1.send(msg).await {
                                 Ok(()) => (),
                                 Err(e) => error!("{}", e.to_string()),
@@ -171,7 +177,7 @@ impl Job {
             match PluginRegistry::get_plugin(&t.plugin) {
                 Some(mut plugin) => {
                     plugin.validate_params(t.params.clone())?;
-                    let res = plugin.func(&self.rx, &self.tx).await;
+                    let res = plugin.func(Some(self.name.clone()), &self.rx, &self.tx).await;
                     self.result.insert(t.name.clone(), serde_json::to_value(res.clone())?);
 
                     info!("Task result: name {}, res: {:?}",  t.name.clone(), res);
@@ -218,7 +224,7 @@ impl Job {
                     match PluginRegistry::get_plugin(&t.plugin) {
                         Some(mut plugin) => {
                             plugin.validate_params(t.params.clone())?;
-                            let res = plugin.func(&self.rx, &self.tx).await;
+                            let res = plugin.func(Some(self.name.clone()), &self.rx, &self.tx).await;
                             self.result.insert(t.name.clone(), serde_json::to_value(res.clone())?);
 
                             info!("Task result: name {}, res: {:?}",  t.name.clone(), res);

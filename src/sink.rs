@@ -55,9 +55,13 @@ impl Sink {
                     // Add message received as data in job context
                     Ok(msg) => {
                         match msg {
-                            FlowMessage::Json(v) => { self.context.insert("data".to_string(), v); },
+                            FlowMessage::JsonWithSender{ sender: s, source: src, value: v } => {
+                                self.context.insert("sender".to_string(), Value::String(s));
+                                self.context.insert("source".to_string(), Value::String(src.unwrap_or("".to_string())));
+                                self.context.insert("data".to_string(), v);
+                            },
                             _ => {
-                                error!("Message received is not Message::Json type");
+                                error!("Message received is not Message::JsonWithSender type");
                                 continue;
                             },
                        }
@@ -89,7 +93,7 @@ impl Sink {
                 let tx_cloned = vec![];
                 //let result_cloned = result.clone();
                 tokio::spawn(async move {
-                    let res = plugin.func(&rx_cloned, &tx_cloned).await;
+                    let res = plugin.func(None, &rx_cloned, &tx_cloned).await;
                     if res.status == PluginStatus::Ko {
                         error!("plugin func error: {}", res.error);
                     }

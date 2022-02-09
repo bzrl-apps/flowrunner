@@ -129,7 +129,7 @@ impl Plugin for Uri {
         Ok(())
     }
 
-    async fn func(&self, _rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
+    async fn func(&self, _sender: Option<String>, _rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
         env_logger::init();
 
         let mut result = PluginExecResult::default();
@@ -259,7 +259,7 @@ mod tests {
         let txs = Vec::<Sender<FlowMessage>>::new();
         let rxs = Vec::<Receiver<FlowMessage>>::new();
 
-        let result = uri.func(&txs, &rxs).await;
+        let result = uri.func(None, &txs, &rxs).await;
 
         println!("{result:#?}");
     }

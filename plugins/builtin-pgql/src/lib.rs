@@ -434,7 +434,7 @@ impl Plugin for Pgql {
     /// In the "execute" statement, the parameter "fetch" is ignored.
     ///
     /// If any error occured, the function will stop, rollback all operations and return.
-    async fn func(&self, _rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
+    async fn func(&self, _sender: Option<String>, _rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
        let _ =  env_logger::try_init();
 
         let rt = Runtime::new().unwrap();
@@ -691,7 +691,7 @@ CREATE TABLE IF NOT EXISTS users (
         let txs_cloned = txs.clone();
         let rxs_cloned = rxs.clone();
         tokio::spawn(async move {
-            let res = pg_cloned.func(&txs_cloned, &rxs_cloned).await;
+            let res = pg_cloned.func(None, &txs_cloned, &rxs_cloned).await;
             tx.send(res).unwrap();
         });
 
@@ -806,7 +806,7 @@ CREATE TABLE IF NOT EXISTS users (
         let txs_cloned = txs.clone();
         let rxs_cloned = rxs.clone();
         tokio::spawn(async move {
-            let res = pg_cloned.func(&txs_cloned, &rxs_cloned).await;
+            let res = pg_cloned.func(None, &txs_cloned, &rxs_cloned).await;
             tx.send(res).unwrap();
         });
 
