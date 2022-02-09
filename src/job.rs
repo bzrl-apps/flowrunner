@@ -239,6 +239,10 @@ impl Job {
         let map: HashMap<_, _> = self.tasks.iter().map(|t| (t.name.clone(), t.clone())).collect();
 
         for t in self.tasks.iter() {
+            if PluginRegistry::get_plugin(&t.plugin).is_none() {
+                return Err(anyhow!("{}", format!("Plugin {} is not found", t.plugin)));
+            }
+
             if t.on_failure != "".to_string() {
                 if map.contains_key(&t.on_failure) != true {
                     return Err(anyhow!("task ".to_owned() + &t.on_failure + " is not found"));
@@ -346,9 +350,10 @@ mod tests {
     use crate::plugin::PluginRegistry;
     use crate::plugin_exec_result;
 
-    #[test]
-    fn test_check_tasks() {
+    #[tokio::test]
+    async fn test_check_tasks() {
         env_logger::init();
+        PluginRegistry::load_plugins("target/debug").await;
 
         let mut job = Job::default();
         job.name = "job-1".to_string();
@@ -366,10 +371,10 @@ mod tests {
         let mut params_task4 = Map::new();
         params_task4.insert("cmd".to_string(), jsonValue::String("echo task4".to_string()));
 
-        let task1 = Task {
+        let mut task1 = Task {
             name: "task-1".to_string(),
             r#if: None,
-            plugin: "builtin-shell".to_string(),
+            plugin: "shell".to_string(),
             params: params_task1.clone(),
             on_success: "task-2".to_string(),
             on_failure: "task-3".to_string()
@@ -402,6 +407,11 @@ mod tests {
             on_failure: "".to_string()
         };
 
+        job.tasks = vec![task1.clone(), task2.clone(), task3.clone(), task4.clone()];
+
+        assert_eq!(job.check_tasks().unwrap_err().to_string(), "Plugin shell is not found");
+
+        task1.plugin = "builtin-shell".to_string();
         job.tasks = vec![task1.clone(), task2.clone(), task3.clone(), task4.clone()];
 
         assert_eq!(job.check_tasks().unwrap(), ());
