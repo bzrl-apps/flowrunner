@@ -1,12 +1,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use serde_json::Value;
-use serde_json::json;
 
 use anyhow::{Result, anyhow};
-use sqlx::TypeInfo;
 use std::collections::HashMap;
-use std::str::FromStr;
 
 use evalexpr::*;
 
@@ -15,7 +12,7 @@ use log::{info, debug, error, warn};
 //use tokio::sync::mpsc::*;
 use async_channel::*;
 
-use crate::plugin::{PluginRegistry, PluginExecResult, Status as PluginStatus};
+use crate::plugin::{PluginRegistry, Status as PluginStatus};
 use crate::message::Message as FlowMessage;
 use crate::utils::*;
 

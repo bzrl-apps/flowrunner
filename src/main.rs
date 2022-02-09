@@ -1,11 +1,9 @@
-#[macro_use]
 extern crate lazy_static;
 extern crate log;
 extern crate clap;
 extern crate json_ops;
 
 use log::{info, error};
-use env_logger::Env;
 
 use clap::{Arg, App};
 

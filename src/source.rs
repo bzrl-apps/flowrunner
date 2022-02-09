@@ -7,9 +7,9 @@ use serde_json::Value;
 //use futures::lock::Mutex;
 use async_channel::*;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 
-use log::{info, debug, error, warn};
+use log::{info, error};
 
 use crate::plugin::{PluginRegistry, Status as PluginStatus};
 use crate::message::Message as FlowMessage;
