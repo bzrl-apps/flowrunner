@@ -85,3 +85,6 @@ json_ops = { path = "json-ops" }
 
 # Date time
 chrono = "0.4"
+
+# Eval
+evalexpr = "7"

@@ -4,8 +4,11 @@ use serde_json::Value;
 use serde_json::json;
 
 use anyhow::{Result, anyhow};
+use sqlx::TypeInfo;
 use std::collections::HashMap;
 use std::str::FromStr;
+
+use evalexpr::*;
 
 use log::{info, debug, error, warn};
 
@@ -33,6 +36,8 @@ pub struct Job {
 	pub name: String,
     #[serde(default)]
 	pub hosts: String,
+	#[serde(default)]
+	pub r#if: Option<String>,
     #[serde(default)]
 	pub start: Option<Task>,
 
@@ -55,30 +60,17 @@ pub struct Task {
     #[serde(default)]
 	pub name: String,
     #[serde(default)]
+    pub r#if: Option<String>,
+    #[serde(default)]
     pub plugin: String,
     #[serde(default)]
 	pub params: Map<String, Value>,
+
     #[serde(default)]
 	pub on_success: String,
     #[serde(default)]
 	pub on_failure: String
 }
-
-//impl Clone for Job {
-    //fn clone(&self) -> Self {
-        //Job {
-            //name: self.name.clone(),
-            //hosts: self.hosts.clone(),
-            //start: self.start.clone(),
-            //tasks: self.tasks.clone(),
-            //context: self.context.clone(),
-            //status: self.status.clone(),
-            //result: self.result.clone(),
-            //rx: vec![],
-            //tx: vec![],
-        //}
-    //}
-//}
 
 impl PartialEq for Job {
     fn eq(&self, other: &Self) -> bool {
@@ -156,11 +148,25 @@ impl Job {
             None => Some(self.tasks[0].clone()),
         };
 
+        // If job condition is not satisfied, then exit
+        if !self.render_job_and_eval()? {
+            return Ok(());
+        }
+
         // Execute task
         while let Some(mut t) = next_task.to_owned() {
             info!("Task executed: name {}, params {:?}", t.name, t.params);
 
-            self.render_task_template(&mut t)?;
+            // If task condition is not satisfied, then move to next task as when the task is
+            // correctly executed
+            if !self.render_task_template(&mut t)? {
+                next_task = match t.on_success.len() {
+                    n if n > 0 => self.get_task_by_name(t.on_success.as_str()),
+                    _ => None,
+                };
+
+                continue;
+            }
 
             match PluginRegistry::get_plugin(&t.plugin) {
                 Some(mut plugin) => {
@@ -179,24 +185,35 @@ impl Job {
 
                         continue;
                     }
-
-                    next_task = match t.on_success.len() {
-                        n if n > 0 => self.get_task_by_name(t.on_success.as_str()),
-                        _ => None,
-                    };
                 },
                 None => error!("No plugin found"),
-            }
+            };
+
+             // Move to next task on success when PluginStatus::Ok or no plugin found
+            next_task = match t.on_success.len() {
+                n if n > 0 => self.get_task_by_name(t.on_success.as_str()),
+                _ => None,
+            };
         }
 
         Ok(())
     }
 
     async fn run_task_by_task(&mut self, tasks: &str) -> Result<()> {
+        // If job condition is not satisfied then exit
+        if !self.render_job_and_eval()? {
+            return Ok(())
+        }
+
         for s in tasks.split(",") {
             match self.get_task_by_name(s) {
-                Some(t) => {
+                Some(mut t) => {
                     info!("Task executed: name {}, params {:?}", t.name, t.params);
+
+                    // If task condition is not satisfied then move to next one
+                    if !self.render_task_template(&mut t)? {
+                        continue
+                    }
 
                     match PluginRegistry::get_plugin(&t.plugin) {
                         Some(mut plugin) => {
@@ -248,8 +265,9 @@ impl Job {
         None
     }
 
-    fn render_task_template(&self, task: &mut Task) -> Result<()> {
+    fn render_task_template(&self, task: &mut Task) -> Result<bool> {
         let mut data: Map<String, Value> = Map::new();
+        let component = task.name.as_str();
 
         data.insert("context".to_string(), Value::Object(self.context.clone()));
 
@@ -265,12 +283,57 @@ impl Job {
 
         expand_env_map(&mut data);
 
-        // Expand task's params
-        for (n, v) in task.params.clone().into_iter() {
-            task.params.insert(n.to_string(), render_param_template(task.name.as_str(), &n, &v, &data)?);
+        if let Some(mut txt) = task.r#if.clone() {
+            // Expand job if condition
+            render_text_template(component, &mut txt, &data)?;
+
+            match eval_boolean(&txt) {
+                Ok(b) => {
+                    if !b {
+                        debug!("{}", format!("task ignored: {}, if: {:?}, eval: {:?}", component, txt, b));
+                        return Ok(false);
+                    }
+
+                    return Ok(true)
+                },
+                Err(e) => return Err(anyhow!(e)),
+            };
         }
 
-        Ok(())
+        // Expand task's params
+        for (n, v) in task.params.clone().into_iter() {
+            task.params.insert(n.to_string(), render_param_template(component, &n, &v, &data)?);
+        }
+
+        Ok(true)
+    }
+
+    fn render_job_and_eval(&self) -> Result<bool> {
+        if let Some(mut txt) = self.r#if.clone() {
+            let component = self.name.as_str();
+            let mut data: Map<String, Value> = Map::new();
+
+            data.insert("context".to_string(), Value::Object(self.context.clone()));
+
+            expand_env_map(&mut data);
+
+            // Expand job if condition
+            render_text_template(component, &mut txt, &data)?;
+
+            match eval_boolean(&txt) {
+                Ok(b) => {
+                    if !b {
+                        debug!("{}", format!("job ignored: {}, if: {:?}, eval: {:?}", component, txt, b));
+                        return Ok(false);
+                    }
+
+                    return Ok(true);
+                },
+                Err(e) => return Err(anyhow!(e)),
+            };
+        }
+
+        Ok(true)
     }
 
 }
@@ -305,7 +368,8 @@ mod tests {
 
         let task1 = Task {
             name: "task-1".to_string(),
-            plugin: "shell".to_string(),
+            r#if: None,
+            plugin: "builtin-shell".to_string(),
             params: params_task1.clone(),
             on_success: "task-2".to_string(),
             on_failure: "task-3".to_string()
@@ -313,7 +377,8 @@ mod tests {
 
         let mut task2 = Task {
             name: "task-2".to_string(),
-            plugin: "shell".to_string(),
+            r#if: None,
+            plugin: "builtin-shell".to_string(),
             params: params_task2.clone(),
             on_success: "task-4".to_string(),
             on_failure: "task-4".to_string()
@@ -321,7 +386,8 @@ mod tests {
 
         let mut task3 = Task {
             name: "task-3".to_string(),
-            plugin: "shell".to_string(),
+            r#if: None,
+            plugin: "builtin-shell".to_string(),
             params: params_task3.clone(),
             on_success: "task-4".to_string(),
             on_failure: "".to_string()
@@ -329,7 +395,8 @@ mod tests {
 
         let task4 = Task {
             name: "task-4".to_string(),
-                plugin: "shell".to_string(),
+            r#if: None,
+            plugin: "builtin-shell".to_string(),
             params: params_task4.clone(),
             on_success: "".to_string(),
             on_failure: "".to_string()
@@ -374,7 +441,8 @@ mod tests {
 
         let mut task1 = Task {
             name: "task-1".to_string(),
-            plugin: "shell".to_string(),
+            r#if: None,
+            plugin: "builtin-shell".to_string(),
             params: params_task1.clone(),
             on_success: "task-2".to_string(),
             on_failure: "task-3".to_string()
@@ -382,7 +450,8 @@ mod tests {
 
         let mut task2 = Task {
             name: "task-2".to_string(),
-            plugin: "shell".to_string(),
+            r#if: Some("false".to_string()),
+            plugin: "builtin-shell".to_string(),
             params: params_task2.clone(),
             on_success: "task-4".to_string(),
             on_failure: "task-4".to_string()
@@ -390,7 +459,8 @@ mod tests {
 
         let mut task3 = Task {
             name: "task-3".to_string(),
-            plugin: "shell".to_string(),
+            r#if: None,
+            plugin: "builtin-shell".to_string(),
             params: params_task3.clone(),
             on_success: "task-4".to_string(),
             on_failure: "".to_string()
@@ -398,7 +468,8 @@ mod tests {
 
         let task4 = Task {
             name: "task-4".to_string(),
-            plugin: "shell".to_string(),
+            r#if: None,
+            plugin: "builtin-shell".to_string(),
             params: params_task4.clone(),
             on_success: "".to_string(),
             on_failure: "".to_string()
@@ -414,11 +485,6 @@ mod tests {
                         "",
                         "rc" => jsonValue::Number(Number::from(0)),
                         "stdout" => jsonValue::String("task1\n".to_string()))).unwrap(),
-            "task-2" => serde_json::to_value(plugin_exec_result!(
-                        PluginStatus::Ok,
-                        "",
-                        "rc" => jsonValue::Number(Number::from(0)),
-                        "stdout" => jsonValue::String("task2\n".to_string()))).unwrap(),
             "task-4" => serde_json::to_value(plugin_exec_result!(
                         PluginStatus::Ok,
                         "",
@@ -430,6 +496,7 @@ mod tests {
 
         task1.on_success = "task-2".to_string();
         task2.on_success = "task-3".to_string();
+        task2.r#if = None;
         task3.on_success = "task-4".to_string();
 
         expected = job_result!(
@@ -483,6 +550,17 @@ mod tests {
         job.run(None).await.unwrap();
 
         assert_eq!(expected, job.result);
+
+        // Test: Job condition
+        job.r#if = Some("false".to_string());
+
+        expected = job_result!();
+
+        job.result.clear();
+        job.run(None).await.unwrap();
+
+        assert_eq!(expected, job.result);
+
     }
 
     #[tokio::test]
@@ -508,7 +586,8 @@ mod tests {
 
         let mut task1 = Task {
             name: "task-1".to_string(),
-            plugin: "shell".to_string(),
+            r#if: Some("false".to_string()),
+            plugin: "builtin-shell".to_string(),
             params: params_task1.clone(),
             on_success: "task-2".to_string(),
             on_failure: "task-3".to_string()
@@ -516,7 +595,8 @@ mod tests {
 
         let task2 = Task {
             name: "task-2".to_string(),
-            plugin: "shell".to_string(),
+            r#if: None,
+            plugin: "builtin-shell".to_string(),
             params: params_task2.clone(),
             on_success: "task-4".to_string(),
             on_failure: "task-4".to_string()
@@ -524,7 +604,8 @@ mod tests {
 
         let task3 = Task {
             name: "task-3".to_string(),
-            plugin: "shell".to_string(),
+            r#if: None,
+            plugin: "builtin-shell".to_string(),
             params: params_task3.clone(),
             on_success: "task-4".to_string(),
             on_failure: "".to_string()
@@ -532,7 +613,8 @@ mod tests {
 
         let task4 = Task {
             name: "task-4".to_string(),
-            plugin: "shell".to_string(),
+            r#if: None,
+            plugin: "builtin-shell".to_string(),
             params: params_task4.clone(),
             on_success: "".to_string(),
             on_failure: "".to_string()
@@ -563,9 +645,6 @@ mod tests {
         task1.params = params_task1.clone();
 
         expected = job_result!(
-            "task-1" => serde_json::to_value(plugin_exec_result!(
-                        PluginStatus::Ko,
-                        "No such file or directory (os error 2)",)).unwrap(),
             "task-4" => serde_json::to_value(plugin_exec_result!(
                         PluginStatus::Ok,
                         "",
@@ -625,7 +704,8 @@ mod tests {
 
         let mut task1 = Task {
             name: "task-1".to_string(),
-            plugin: "shell".to_string(),
+            r#if: None,
+            plugin: "builtin-shell".to_string(),
             params: params_task1.clone(),
             on_success: "task-2".to_string(),
             on_failure: "task-3".to_string()
@@ -644,7 +724,8 @@ mod tests {
 
         let expected = Task {
             name: "task-1".to_string(),
-            plugin: "shell".to_string(),
+            r#if: None,
+            plugin: "builtin-shell".to_string(),
             params: params_expected.clone(),
             on_success: "task-2".to_string(),
             on_failure: "task-3".to_string()

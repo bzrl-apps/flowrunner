@@ -396,6 +396,15 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                             j.hosts = "localhost".to_string();
                         }
 
+                        // Check if condition
+                        let yaml_value_if = yamlValue::String("if".to_string());
+                        if let Some(v) = job.get(yaml_value_if) {
+                            j.r#if = match v.as_str() {
+                                Some(s) => Some(s.to_string()),
+                                None => None,
+                            };
+                        }
+
                         let mut tasks: Vec<Task> = Vec::new();
 
                         if let Some(v) = job.get(yamlValue::String("tasks".to_string())) {
@@ -415,6 +424,33 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                                             v2.remove(&yamlValue::String("name".to_string()));
                                         } else {
                                             t.name = default_taskname.clone();
+                                        }
+
+                                        // Check if condition
+                                        let yaml_value_if = yamlValue::String("if".to_string());
+                                        if let Some(n) = v2.get(&yaml_value_if) {
+                                            t.r#if = match n.as_str() {
+                                                Some(s) => Some(s.to_string()),
+                                                None => None,
+                                            };
+
+                                            v2.remove(&yaml_value_if);
+                                        }
+
+                                        // Check on_success
+                                        let yaml_value_on_success = yamlValue::String("on_success".to_string());
+                                        if let Some(v) = v2.get(&yaml_value_on_success) {
+                                            t.on_success = v.as_str().unwrap_or("").to_string();
+
+                                            v2.remove(&yaml_value_on_success);
+                                        }
+
+                                        // Check on_failure
+                                        let yaml_value_on_failure = yamlValue::String("on_failure".to_string());
+                                        if let Some(v) = v2.get(&yaml_value_on_failure) {
+                                            t.on_failure = v.as_str().unwrap_or("").to_string();
+
+                                            v2.remove(&yaml_value_on_failure);
                                         }
 
                                         // Check plugin
@@ -439,16 +475,6 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                                             }
                                         } else {
                                             return Err(anyhow!("Cannot parse the job {}, task {}", j.name, default_taskname));
-                                        }
-
-                                        // Check on_success
-                                        if let Some(v) = v2.get(&yamlValue::String("on_success".to_string())) {
-                                            t.on_success = v.as_str().unwrap_or("").to_string();
-                                        }
-
-                                        // Check on_failure
-                                        if let Some(v) = v2.get(&yamlValue::String("on_failure".to_string())) {
-                                            t.on_failure = v.as_str().unwrap_or("").to_string();
                                         }
 
                                         // Set on_success for the previous task to this one
@@ -497,6 +523,15 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                             s.name = v.as_str().unwrap_or(&default_sinkname).to_string();
                         } else {
                             s.name = default_sinkname.clone();
+                        }
+
+                        // Check if condition
+                        let yaml_value_if = yamlValue::String("if".to_string());
+                        if let Some(v) = sk.get(yaml_value_if) {
+                            s.r#if = match v.as_str() {
+                                Some(s) => Some(s.to_string()),
+                                None => None,
+                            };
                         }
 
                         // Check plugin
@@ -617,6 +652,7 @@ jobs:
       name: default
 
   - name: job2
+    if: "source == true"
     tasks:
     - shell:
         params:
@@ -643,6 +679,7 @@ jobs:
 
 sinks:
 - name: pg1
+  if: "job == job1"
   plugin: builtin-pgql
   params:
     conn_str: "postgres://localhost:5432/flowrunner"
@@ -713,6 +750,7 @@ sinks:
         let mut sinks = Vec::new();
         sinks.push(Sink {
             name: "pg1".to_string(),
+            r#if: Some("job == job1".to_string()),
             plugin: "builtin-pgql".to_string(),
             params: params_sink1,
             context: Map::new(),
@@ -736,6 +774,7 @@ sinks:
         let mut job1_tasks = Vec::new();
         job1_tasks.push(Task {
             name: "default".to_string(),
+            r#if: None,
             plugin: "shell".to_string(),
             params: params_task1.clone(),
             on_success: "".to_string(),
@@ -745,6 +784,7 @@ sinks:
         let mut job2_tasks = Vec::new();
         job2_tasks.push(Task {
             name: "task-1".to_string(),
+            r#if: None,
             plugin: "shell".to_string(),
             params: params_task1.clone(),
             on_success: "task-2".to_string(),
@@ -753,6 +793,7 @@ sinks:
 
         job2_tasks.push(Task {
             name: "task-2".to_string(),
+            r#if: None,
             plugin: "shell".to_string(),
             params: params_task2.clone(),
             on_success: "task-4".to_string(),
@@ -761,6 +802,7 @@ sinks:
 
         job2_tasks.push(Task {
             name: "task-3".to_string(),
+            r#if: None,
             plugin: "shell".to_string(),
             params: params_task3.clone(),
             on_success: "task-4".to_string(),
@@ -769,6 +811,7 @@ sinks:
 
         job2_tasks.push(Task {
             name: "task-4".to_string(),
+            r#if: None,
             plugin: "shell".to_string(),
             params: params_task4.clone(),
             on_success: "".to_string(),
@@ -778,6 +821,7 @@ sinks:
         let mut job3_tasks = Vec::new();
         job3_tasks.push(Task {
             name: "task-1".to_string(),
+            r#if: None,
             plugin: "shell".to_string(),
             params: params_task1.clone(),
             on_success: "".to_string(),
@@ -787,6 +831,7 @@ sinks:
         let mut jobs = Vec::new();
         jobs.push(Job {
             name: "job-1".to_string(),
+            r#if: None,
             hosts: "host1".to_string(),
             start: None,
             tasks: job1_tasks,
@@ -798,6 +843,7 @@ sinks:
 
         jobs.push(Job {
             name: "job2".to_string(),
+            r#if: Some("source == true".to_string()),
             hosts: "localhost".to_string(),
             start: None,
             tasks: job2_tasks,
@@ -809,6 +855,7 @@ sinks:
 
         jobs.push(Job {
             name: "job3".to_string(),
+            r#if: None,
             hosts: "host3".to_string(),
             start: None,
             tasks: job3_tasks,

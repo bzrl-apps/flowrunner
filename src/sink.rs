@@ -9,6 +9,8 @@ use async_channel::*;
 
 use anyhow::{Result, anyhow};
 
+use evalexpr::*;
+
 use log::{info, debug, error, warn};
 
 use crate::plugin::{PluginRegistry, Status as PluginStatus};
@@ -19,6 +21,8 @@ use crate::utils::*;
 pub struct Sink {
     #[serde(default)]
 	pub name: String,
+	#[serde(default)]
+	pub r#if: Option<String>,
     #[serde(default)]
     pub plugin: String,
     #[serde(default)]
@@ -73,7 +77,9 @@ impl Sink {
     async fn exec_plugin(&self) -> Result<()> {
         let mut s = self.clone();
 
-        self.render_sink_template(&mut s)?;
+        if !self.render_sink_template(&mut s)? {
+            return Ok(());
+        }
 
         match PluginRegistry::get_plugin(&s.plugin) {
             Some(mut plugin) => {
@@ -95,18 +101,36 @@ impl Sink {
         Ok(())
     }
 
-    fn render_sink_template(&self, sink: &mut Sink) -> Result<()> {
+    fn render_sink_template(&self, sink: &mut Sink) -> Result<bool> {
         let mut data: Map<String, Value> = Map::new();
+        let component = sink.name.as_str();
 
         data.insert("context".to_string(), Value::from(self.context.clone()));
 
         expand_env_map(&mut data);
+
+        if let Some(mut txt) = sink.r#if.clone() {
+            // Expand job if condition
+            render_text_template(component, &mut txt, &data)?;
+
+            match eval_boolean(&txt) {
+                Ok(b) => {
+                    if !b {
+                        debug!("{}", format!("sink ignored: {}, if: {:?}, eval: {:?}", component, txt, b));
+                        return Ok(false);
+                    }
+
+                    return Ok(true)
+                },
+                Err(e) => return Err(anyhow!(e)),
+            };
+        }
 
         // Expand task's params
         for (n, v) in sink.params.clone().into_iter() {
             sink.params.insert(n.to_string(), render_param_template(sink.name.as_str(), &n, &v, &data)?);
         }
 
-        Ok(())
+        Ok(true)
     }
 }

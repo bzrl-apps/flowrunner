@@ -664,6 +664,7 @@ dependencies = [
  "dlopen_derive",
  "env_logger",
  "envmnt",
+ "evalexpr",
  "futures",
  "glob",
  "json_ops",

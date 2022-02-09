@@ -129,6 +129,32 @@ pub fn render_param_template(component: &str, key: &str, value: &Value, data: &M
     }
 }
 
+pub fn render_text_template(component: &str, text: &mut String, data: &Map<String, Value>) -> Result<()> {
+    debug!("Rendering text templating: component {}, text {}, data {:?}", component, text, data);
+
+    let mut tera = Tera::default();
+
+    let mut options = ExpandOptions::new();
+    options.expansion_type = Some(ExpansionType::UnixBracketsWithDefaults);
+
+    let context = match Context::from_value(Value::Object(data.to_owned())) {
+        Ok(c) => c,
+        Err(e) => return Err(anyhow!(e)),
+    };
+
+    let text_rendered = envmnt::expand(text, Some(options));
+
+    match tera.render_str(text_rendered.as_str(), &context) {
+        Ok(s) => {
+            text.clear();
+            text.insert_str(0, s.as_str());
+        },
+        Err(e) => return Err(anyhow!(e)),
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
