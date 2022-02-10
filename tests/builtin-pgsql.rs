@@ -104,7 +104,7 @@ sinks:
     }
 
     tokio::spawn(async move {
-        flow.run().await;
+        let _ = flow.run().await;
     });
 
     sleep(Duration::from_millis(10000)).await;
@@ -231,7 +231,7 @@ jobs:
     }
 
     tokio::spawn(async move {
-        flow.run().await;
+        let _ = flow.run().await;
     });
 
     sleep(Duration::from_millis(10000)).await;

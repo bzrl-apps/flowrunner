@@ -202,6 +202,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "builtin-kafka-producer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "async-trait",
+ "env_logger",
+ "flowrunner",
+ "json_ops",
+ "log",
+ "rdkafka",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "builtin-pgql"
 version = "0.1.0"
 dependencies = [

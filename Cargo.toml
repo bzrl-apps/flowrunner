@@ -29,7 +29,8 @@ members = [
   "plugins/builtin-shell",
   "plugins/builtin-kafka-consumer",
   "plugins/builtin-uri",
-  "plugins/builtin-pgql"
+  "plugins/builtin-pgql",
+  "plugins/builtin-kafka-producer"
 ]
 
 #[lib]

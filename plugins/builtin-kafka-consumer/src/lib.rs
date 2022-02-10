@@ -110,7 +110,7 @@ impl Plugin for KafkaConsumer {
     }
 
     async fn func(&self, sender: Option<String>, rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
-        env_logger::init();
+       let _ =  env_logger::try_init();
 
         let mut result = PluginExecResult::default();
 
@@ -166,7 +166,6 @@ async fn run(sender: Option<String>, brokers: Vec<String>, config: Config, rx: &
     }
 
     let consumer: StreamConsumer  = match client_config
-        .set_log_level(RDKafkaLogLevel::Debug)
         .create() {
             Ok(c) => c,
             Err(e) => {

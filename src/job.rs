@@ -350,7 +350,7 @@ mod tests {
     use super::*;
     use serde_json::value::Value as jsonValue;
     use serde_json::{Map, Number, json};
-    use crate::plugin::PluginRegistry;
+    use crate::plugin::{PluginRegistry, PluginExecResult};
     use crate::plugin_exec_result;
 
     #[tokio::test]
