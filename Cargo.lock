@@ -185,6 +185,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "builtin-json-patch"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "async-trait",
+ "env_logger",
+ "flowrunner",
+ "json_ops",
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "builtin-kafka-consumer"
 version = "0.1.0"
 dependencies = [
@@ -1181,6 +1197,8 @@ name = "json_ops"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "env_logger",
+ "log",
  "serde",
  "serde_json",
 ]

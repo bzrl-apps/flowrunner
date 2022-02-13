@@ -30,7 +30,8 @@ members = [
   "plugins/builtin-kafka-consumer",
   "plugins/builtin-uri",
   "plugins/builtin-pgql",
-  "plugins/builtin-kafka-producer"
+  "plugins/builtin-kafka-producer",
+  "plugins/builtin-json-patch"
 ]
 
 #[lib]
