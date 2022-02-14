@@ -60,8 +60,13 @@ impl JsonOps {
     ///
     /// If no value is found, it will return Value::Null.
     fn get_value_by_path(&self, path: &str) -> Value {
-        let slice_path: Vec<&str> = path.split('.').collect();
         let mut val = self.value.clone();
+
+        if path == "" {
+            return val;
+        }
+
+        let slice_path: Vec<&str> = path.split('.').collect();
 
         for k in slice_path.iter() {
             let val_type = get_value_type(&val);
@@ -94,7 +99,7 @@ impl JsonOps {
     /// If the path is not empty, it will get and check the 1st index of the path. If the returned
     /// value is a simple type such as number, bool or string, it will replace if both values are
     /// the same type. Otherwise, it will process recursively.
-    fn set_value_by_path(&mut self, path: &str, value: Value) -> Result<()> {
+    pub fn set_value_by_path(&mut self, path: &str, value: Value) -> Result<()> {
         let value_type = get_value_type(&value);
         let self_value_type = get_value_type(&self.value);
 
@@ -167,7 +172,7 @@ impl JsonOps {
     /// The current value must be an object or an array. Otherwise, it returns an error.
     /// For an array, the new value will be added at the end of it. For an object, a new field
     /// will be added if it does not exist before. Otherwise, the existing field gets updated.
-    fn add_value_by_path(&mut self, path: &str, value: Value) -> Result<()> {
+    pub fn add_value_by_path(&mut self, path: &str, value: Value) -> Result<()> {
         let value_type = get_value_type(&value);
         let self_value_type = get_value_type(&self.value);
 
@@ -266,7 +271,7 @@ impl JsonOps {
     }
 
 
-    fn remove_value_by_path(&mut self, path: &str) -> Result<()> {
+    pub fn remove_value_by_path(&mut self, path: &str) -> Result<()> {
         let self_value_type = get_value_type(&self.value);
 
         // Check type
