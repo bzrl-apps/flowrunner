@@ -90,3 +90,6 @@ chrono = "0.4"
 
 # Eval
 evalexpr = "7"
+
+# DB
+rocksdb = "0.18"
