@@ -1,3 +1,4 @@
+use std::time::Duration;
 use rocksdb::{DB, Options, ColumnFamilyDescriptor};
 use std::{sync::Arc, collections::HashMap};
 
@@ -7,17 +8,17 @@ use anyhow::{Result, anyhow};
 
 use log::debug;
 
-use crate::datastore::{Store, StoreConfig};
+use crate::datastore::store::{Store, StoreConfig};
 
 #[derive(Clone)]
 pub struct RocksDB {
     db: Arc<DB>,
     db_opts: Options,
-    ns_opts: HashMap<String, Options>
+    //ns_opts: HashMap<String, Options>
 }
 
 impl RocksDB {
-    fn init(config: &StoreConfig) -> Self {
+    pub fn init(config: &StoreConfig) -> Self {
         let mut cfs: Vec<ColumnFamilyDescriptor> = Vec::new();
         let mut ns_opts: HashMap<String, Options> = HashMap::new();
 
@@ -30,14 +31,14 @@ impl RocksDB {
         let db_opts = set_opts(config.options.clone());
 
         let db = match config.ttl {
-            Some(d) => DB::open_cf_descriptors_with_ttl(&db_opts, &config.conn_str, cfs, d).unwrap(),
-            None => DB::open_cf_descriptors(&db_opts, &config.conn_str, cfs).unwrap(),
+            s if s > 0 => DB::open_cf_descriptors_with_ttl(&db_opts, &config.conn_str, cfs, Duration::from_secs(s)).unwrap(),
+            _  => DB::open_cf_descriptors(&db_opts, &config.conn_str, cfs).unwrap(),
         };
 
         RocksDB {
             db: Arc::new(db),
             db_opts,
-            ns_opts,
+            //ns_opts,
         }
     }
 }
