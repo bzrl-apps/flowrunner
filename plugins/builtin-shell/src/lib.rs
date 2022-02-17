@@ -1,6 +1,7 @@
 extern crate flowrunner;
 use flowrunner::plugin::{Plugin, PluginExecResult, Status};
 use flowrunner::message::Message as FlowMessage;
+use flowrunner::datastore::store::BoxStore;
 
 extern crate json_ops;
 use json_ops::JsonOps;
@@ -57,6 +58,8 @@ impl Plugin for Shell {
 
         Ok(())
     }
+
+    fn set_datastore(&self, _datastore: Option<BoxStore>) {}
 
     async fn func(&self, _sender: Option<String>, _rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
         //let mut result: Map<String, Value> = Map::new();

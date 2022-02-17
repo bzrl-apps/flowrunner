@@ -8,3 +8,4 @@ pub mod flow;
 pub mod job;
 pub mod source;
 pub mod sink;
+pub mod datastore;

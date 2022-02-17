@@ -12,6 +12,7 @@ use log::{info, debug, error, warn};
 //use tokio::sync::mpsc::*;
 use async_channel::*;
 
+use crate::datastore::store::{BoxStore, StoreConfig};
 use crate::plugin::{PluginRegistry, Status as PluginStatus};
 use crate::message::Message as FlowMessage;
 use crate::utils::*;
@@ -80,7 +81,7 @@ impl PartialEq for Job {
 }
 
 impl Job {
-    pub async fn run(&mut self, tasks: Option<&str>) -> Result<()> {
+    pub async fn run(&mut self, tasks: Option<&str>, datastore: Option<StoreConfig>) -> Result<()> {
         info!("JOB RUN STARTED: job: {}, hosts: {}, nb rx: {}, nb tx: {}", self.name, self.hosts, self.rx.len(), self.tx.len());
         debug!("Job context: {:?}", self.context);
 
@@ -111,10 +112,10 @@ impl Job {
 
                         // Run certain tasks given in parameter
                         if ts != "" {
-                            self.run_task_by_task(ts).await?;
+                            self.run_task_by_task(ts, datastore.clone()).await?;
                         } else {
                             // Run complete taskflow by running the first task
-                            self.run_all_tasks(self.start.clone()).await?;
+                            self.run_all_tasks(self.start.clone(), datastore.clone()).await?;
                         }
 
                         for rx1 in self.rx.iter() {
@@ -135,17 +136,17 @@ impl Job {
         } else {
             // Run certain tasks given in parameter
             if ts != "" {
-                self.run_task_by_task(ts).await?;
+                self.run_task_by_task(ts, datastore).await?;
             } else {
                 // Run complete taskflow by running the first task
-                self.run_all_tasks(self.start.clone()).await?;
+                self.run_all_tasks(self.start.clone(), datastore).await?;
             }
         }
 
         Ok(())
     }
 
-    async fn run_all_tasks(&mut self, start: Option<Task>) -> Result<()> {
+    async fn run_all_tasks(&mut self, start: Option<Task>, datastore: Option<StoreConfig>) -> Result<()> {
         let mut next_task: Option<Task> = match start {
             Some(task) => Some(task),
             None => Some(self.tasks[0].clone()),
@@ -171,9 +172,17 @@ impl Job {
                 continue;
             }
 
+            // Init datastore if configured
+            let mut bs: Option<BoxStore> = None;
+
+            if let Some(ds) = datastore.clone() {
+                bs = Some(ds.new_store()?);
+            }
+
             match PluginRegistry::get_plugin(&t.plugin) {
                 Some(mut plugin) => {
                     plugin.validate_params(t.params.clone())?;
+                    plugin.set_datastore(bs);
                     let res = plugin.func(Some(self.name.clone()), &self.rx, &self.tx).await;
                     self.result.insert(t.name.clone(), serde_json::to_value(res.clone())?);
 
@@ -202,7 +211,7 @@ impl Job {
         Ok(())
     }
 
-    async fn run_task_by_task(&mut self, tasks: &str) -> Result<()> {
+    async fn run_task_by_task(&mut self, tasks: &str, datastore: Option<StoreConfig>) -> Result<()> {
         // If job condition is not satisfied then exit
         if !self.render_job_and_eval()? {
             return Ok(())
@@ -218,9 +227,17 @@ impl Job {
                         continue
                     }
 
+                    // Init datastore if configured
+                    let mut bs: Option<BoxStore> = None;
+
+                    if let Some(ds) = datastore.clone() {
+                        bs = Some(ds.new_store()?);
+                    }
+
                     match PluginRegistry::get_plugin(&t.plugin) {
                         Some(mut plugin) => {
                             plugin.validate_params(t.params.clone())?;
+                            plugin.set_datastore(bs);
                             let res = plugin.func(Some(self.name.clone()), &self.rx, &self.tx).await;
                             self.result.insert(t.name.clone(), serde_json::to_value(res.clone())?);
 

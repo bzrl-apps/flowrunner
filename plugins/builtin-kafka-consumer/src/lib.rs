@@ -1,6 +1,7 @@
 extern crate flowrunner;
 use flowrunner::plugin::{Plugin, PluginExecResult, Status};
 use flowrunner::message::Message as FlowMessage;
+use flowrunner::datastore::store::BoxStore;
 
 extern crate json_ops;
 use json_ops::JsonOps;
@@ -108,6 +109,8 @@ impl Plugin for KafkaConsumer {
 
         Ok(())
     }
+
+    fn set_datastore(&self, _datastore: Option<BoxStore>) {}
 
     async fn func(&self, sender: Option<String>, rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
        let _ =  env_logger::try_init();

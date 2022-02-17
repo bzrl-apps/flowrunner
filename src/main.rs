@@ -19,6 +19,7 @@ mod source;
 mod sink;
 mod message;
 mod utils;
+mod datastore;
 
 #[tokio::main]
 async fn main() {

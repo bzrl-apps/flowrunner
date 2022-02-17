@@ -26,6 +26,7 @@ use anyhow::Result;
 use log::{info, debug};
 
 use crate::message::Message as FlowMessage;
+use crate::datastore::store::BoxStore;
 
 #[macro_export]
 macro_rules! plugin_exec_result {
@@ -63,7 +64,9 @@ pub trait Plugin {
     fn get_version(&self) -> String;
     fn get_description(&self) -> String;
     fn get_params(&self) -> Map<String, Value>;
+    fn set_datastore(&self, datastore: Option<BoxStore>);
     fn validate_params(&mut self, params: Map<String, Value>) -> Result<()>;
+    //fn set_kvstore(&self, store: dyn KVStore);
     async fn func(&self, sender: Option<String>, rx: &Vec<Sender<FlowMessage>>, tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult;
 }
 

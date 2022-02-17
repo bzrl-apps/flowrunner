@@ -2,6 +2,7 @@
 extern crate flowrunner;
 use flowrunner::plugin::{Plugin, PluginExecResult, Status};
 use flowrunner::message::Message as FlowMessage;
+use flowrunner::datastore::store::BoxStore;
 
 extern crate json_ops;
 use json_ops::JsonOps;
@@ -390,6 +391,8 @@ impl Plugin for Pgql {
 
         params
     }
+
+    fn set_datastore(&self, _datastore: Option<BoxStore>) {}
 
     fn validate_params(&mut self, params: Map<String, Value>) -> Result<()> {
         let jops_params = JsonOps::new(Value::Object(params));

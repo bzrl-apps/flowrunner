@@ -2,6 +2,7 @@ extern crate flowrunner;
 use flowrunner::plugin::{Plugin, PluginExecResult, Status};
 use flowrunner::message::Message as FlowMessage;
 use flowrunner::return_plugin_exec_result_err;
+use flowrunner::datastore::store::BoxStore;
 
 extern crate json_ops;
 use json_ops::JsonOps;
@@ -9,7 +10,7 @@ use json_ops::JsonOps;
 //use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use serde_json::value::Value;
-use serde_json::{Map, Number};
+use serde_json::Map;
 
 use anyhow::{anyhow, Result};
 
@@ -100,6 +101,8 @@ impl Plugin for JsonPatch {
 
         Ok(())
     }
+
+    fn set_datastore(&self, _datastore: Option<BoxStore>) {}
 
     /// Apply operation per operation on target in the order. The result of previous operation will
     /// be used for the next operation.

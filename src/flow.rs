@@ -1,4 +1,4 @@
-use log::{info, error};
+use log::{info, error, debug};
 use std::fs::File;
 
 use serde::{Deserialize, Serialize};
@@ -11,6 +11,7 @@ use anyhow::{anyhow, Result};
 use async_channel::*;
 use tokio::sync::*;
 
+use crate::datastore::store::StoreNamespace;
 use crate::{
     job::{Task, Job},
     utils,
@@ -19,6 +20,7 @@ use crate::{
 };
 
 use crate::message::Message as FlowMessage;
+use crate::datastore::store::StoreConfig;
 
 #[derive(Clone, Serialize, Deserialize, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Kind {
@@ -35,7 +37,7 @@ impl Default for Kind {
 
 //use crate::inventory::Inventory;
 
-#[derive(Debug ,Serialize, Deserialize, PartialEq)]
+#[derive(Default, Debug ,Serialize, Deserialize, PartialEq)]
 pub struct Flow {
     #[serde(default)]
     pub name: String,
@@ -44,6 +46,9 @@ pub struct Flow {
 
     #[serde(default)]
     pub kind: Kind,
+
+    #[serde(default)]
+    pub datastore: Option<StoreConfig>,
 
     #[serde(default)]
     pub sources: Vec<Source>,
@@ -67,22 +72,23 @@ pub struct Flow {
 	pub is_on_remote: bool,
 }
 
-impl Default for Flow {
-    fn default() -> Self {
-        Flow {
-            name: "".to_string(),
-            variables: Map::new(),
-            kind: Kind::Action,
-            sources: vec![],
-            jobs: vec![],
-            sinks: vec![],
-            remote_plugin_dir: "".to_string(),
-            remote_exec_dir: "".to_string(),
-            inventory_file: "".to_string(),
-            is_on_remote: false,
-        }
-    }
-}
+//impl Default for Flow {
+    //fn default() -> Self {
+        //Flow {
+            //name: "".to_string(),
+            //variables: Map::new(),
+            //kind: Kind::Action,
+            //datastore: Map::new(),
+            //sources: vec![],
+            //jobs: vec![],
+            //sinks: vec![],
+            //remote_plugin_dir: "".to_string(),
+            //remote_exec_dir: "".to_string(),
+            //inventory_file: "".to_string(),
+            //is_on_remote: false,
+        //}
+    //}
+//}
 
 impl Flow {
     pub fn new_from_file(file: &str) -> Result<Flow>{
@@ -177,8 +183,9 @@ impl Flow {
 
         let jobs_cloned = self.jobs.clone();
         let kind_cloned = self.kind.clone();
+        let datastore_cloned = self.datastore.clone();
         tokio::spawn(async move {
-            if let Ok(jobs) = run_all_jobs(kind_cloned, jobs_cloned).await {
+            if let Ok(jobs) = run_all_jobs(kind_cloned, jobs_cloned, datastore_cloned).await {
                 if let Err(_) = tx.send(jobs) {
                     error!("Sending jobs result: receiver dropped");
                 }
@@ -187,7 +194,7 @@ impl Flow {
 
         match rx.await {
             Ok(v) => self.jobs = v,
-            Err(_) => println!("Receving jobs result: sender dropped"),
+            Err(_) => error!("Receving jobs result: sender dropped"),
         }
     }
 
@@ -234,26 +241,26 @@ async fn run_all_sinks(sinks: Vec<Sink>) -> Result<()> {
     Ok(())
 }
 
-async fn run_all_jobs(kind: Kind, jobs: Vec<Job>) -> Result<Vec<Job>> {
+async fn run_all_jobs(kind: Kind, jobs: Vec<Job>, datastore: Option<StoreConfig>) -> Result<Vec<Job>> {
     let mut js = jobs.clone();
 
     for (i, j) in jobs.iter().enumerate() {
         info!("Executing job {}", j.name);
 
-        exec_job(kind, &mut js, i).await?;
+        exec_job(kind, &mut js, i, datastore.clone()).await?;
     }
 
     Ok(js.to_vec())
 }
 
-async fn exec_job(kind: Kind, jobs: &mut [Job], idx: usize) -> Result<()> {
+async fn exec_job(kind: Kind, jobs: &mut [Job], idx: usize, datastore: Option<StoreConfig>) -> Result<()> {
     let mut job = jobs[idx].clone();
 
     if job.hosts == "".to_string() || job.hosts == "localhost".to_string() || job.hosts == "127.0.0.1".to_string() {
-        let _ = exec_job_local(kind, &mut job).await?;
+        let _ = exec_job_local(kind, &mut job, datastore.clone()).await?;
         jobs[idx] = job;
 
-        println!("Job: {:?}", jobs[idx]);
+        debug!("Job: {:?}", jobs[idx]);
 
         return Ok(());
     }
@@ -264,19 +271,20 @@ async fn exec_job(kind: Kind, jobs: &mut [Job], idx: usize) -> Result<()> {
    Ok(())
 }
 
-async fn exec_job_local(kind: Kind, job: &mut Job) -> Result<()> {
+async fn exec_job_local(kind: Kind, job: &mut Job, datastore: Option<StoreConfig>) -> Result<()> {
     info!("Executing locally the job {}", job.name);
 
     if kind == Kind::Stream {
         let mut job_cloned = job.clone();
+        let datastore_cloned = datastore.clone();
         tokio::spawn(async move {
-            match job_cloned.run(None).await {
+            match job_cloned.run(None, datastore_cloned).await {
                 Ok(()) => (),
                 Err(e) => error!("{}", e.to_string()),
             }
         });
     } else {
-        job.run(None).await?;
+        job.run(None, datastore.clone()).await?;
     }
 
     Ok(())
@@ -314,6 +322,94 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                 let val = utils::convert_value_yaml_to_json(v)?;
                 flow.variables.insert(key.to_string(), val);
             }
+        }
+    }
+
+    // Parsing Datastore
+    if let Some(ds) = mapping.get(&yamlValue::String("datastore".to_string())) {
+        if let Some(m) = ds.as_mapping() {
+            let mut sc = StoreConfig::default();
+
+            // Check kind
+            if let Some(v) = m.get(&yamlValue::String("kind".to_string())) {
+                sc.kind = v.as_str().unwrap_or("").to_string();
+            }
+
+            if sc.kind == "" {
+                return Err(anyhow!("datastore.kind must not be empty!"));
+            }
+
+            // Check conn_str
+            if let Some(v) = m.get(&yamlValue::String("conn_str".to_string())) {
+                sc.conn_str = v.as_str().unwrap_or("").to_string();
+            }
+
+            if sc.conn_str == "" {
+                return Err(anyhow!("datastore.conn_str must not be empty!"));
+            }
+
+            // Check options
+            if let Some(v1) = m.get(&yamlValue::String("options".to_string())) {
+                let mut options = Map::new();
+
+                if let Some(v2) = v1.as_mapping() {
+                    for (k, v) in v2.iter() {
+                        options.insert(k.as_str().unwrap_or("").to_string(), utils::convert_value_yaml_to_json(v)?);
+                    }
+                }
+
+                sc.options = options;
+            }
+
+            // Check TTL
+            if let Some(v1) = m.get(&yamlValue::String("ttl".to_string())) {
+                sc.ttl = v1.as_u64().unwrap_or(0);
+            }
+
+            // Check Namespaces
+            if let Some(v1) = m.get(&yamlValue::String("namespaces".to_string())) {
+                match v1.as_sequence() {
+                    Some(seq) => {
+                        let mut namespaces: Vec<StoreNamespace> = Vec::new();
+
+                        for s in seq.iter() {
+                            let mut ns = StoreNamespace::default();
+                            // Check name
+                            if let Some(v) = s.get(&yamlValue::String("name".to_string())) {
+                                ns.name = v.as_str().unwrap_or("").to_string();
+                            }
+
+                            if ns.name == "" {
+                                return Err(anyhow!("datastore namespace's name must not be empty!"));
+                            }
+
+                            // Check options
+                            if let Some(v1) = s.get(&yamlValue::String("options".to_string())) {
+                                let mut options = Map::new();
+
+                                if let Some(v2) = v1.as_mapping() {
+                                    for (k, v) in v2.iter() {
+                                        options.insert(k.as_str().unwrap_or("").to_string(), utils::convert_value_yaml_to_json(v)?);
+                                    }
+                                }
+
+                                ns.options = options;
+                            }
+
+                            namespaces.push(ns);
+                        }
+
+                        sc.namespaces = namespaces;
+                    },
+                    None => (),
+                }
+            }
+
+            if sc.namespaces.len() <= 0 {
+                return Err(anyhow!("datastore.namespaces must not be empty"));
+            }
+
+            flow.datastore = Some(sc);
         }
     }
 
@@ -622,6 +718,13 @@ variables:
   - val41
   - val42
 
+datastore:
+  kind: rocksdb
+  conn_str: /tmp/rocksdb
+  namespaces:
+  - name: ns1
+  - name: ns2
+
 sources:
   - name: kafka1
     plugin: kafka
@@ -865,10 +968,19 @@ sinks:
             tx: vec![],
         });
 
+        let mut datastore = StoreConfig::default();
+        datastore.kind = "rocksdb".to_string();
+        datastore.conn_str = "/tmp/rocksdb".to_string();
+        datastore.namespaces = vec![
+            StoreNamespace {name: "ns1".to_string(), options: Map::new()},
+            StoreNamespace {name: "ns2".to_string(), options: Map::new()},
+        ];
+
         let expected = Flow {
             name: "flow1".to_string(),
             variables,
             kind: Kind::Action,
+            datastore: Some(datastore),
             sources,
             jobs,
             sinks,
@@ -977,8 +1089,8 @@ jobs:
         );
 
         match produce_future.await {
-            Ok(delivery) => println!("Sent delivery status: {:?}", delivery),
-            Err((e, _)) => println!("Sent eror: {:?}", e),
+            Ok(delivery) => debug!("Sent delivery status: {:?}", delivery),
+            Err((e, _)) => error!("Sent eror: {:?}", e),
         }
 
 
