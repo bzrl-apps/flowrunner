@@ -92,4 +92,5 @@ chrono = "0.4"
 evalexpr = "7"
 
 # DB
-rocksdb = "0.18"
+# Error compilation on MacOs with lz4 and bzip2
+rocksdb = { version = "0.18", default-features = false, features = ["serde", "zstd", "zlib", "snappy"] }
