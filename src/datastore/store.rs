@@ -4,14 +4,33 @@ use serde_json::{Value, Map};
 
 use crate::datastore::store_rocksdb::RocksDB;
 
-pub trait Store {
+pub type BoxStore = Box<dyn Store + Send + Sync>;
+
+pub trait Store: StoreClone {
     fn list_namespaces(&self) -> Result<Vec<String>>;
     fn save(&self, ns: &str, k: &str, v: &str) -> Result<()>;
     fn find(&self, ns: &str, k: &str) -> Result<String>;
     fn delete(&self, ns: &str, k: &str) -> Result<()>;
 }
 
-pub type BoxStore = Box<dyn Store + Send + Sync>;
+pub trait StoreClone {
+    fn clone_box(&self) -> BoxStore;
+}
+
+impl<T> StoreClone for T
+where
+    T: 'static + Store + Send + Sync + Clone,
+{
+    fn clone_box(&self) -> BoxStore {
+        Box::new(self.clone())
+    }
+}
+
+impl Clone for BoxStore {
+    fn clone(&self) -> BoxStore {
+        self.clone_box()
+    }
+}
 
 /// Store configuration
 ///
