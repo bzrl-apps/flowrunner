@@ -1036,7 +1036,7 @@ jobs:
 
         let flow =  Flow::new_from_str(content).unwrap();
 
-        run_all_jobs(flow.kind.clone(), flow.jobs.clone()).await.unwrap();
+        run_all_jobs(flow.kind.clone(), flow.jobs.clone(), None).await.unwrap();
     }
 
     #[tokio::test]

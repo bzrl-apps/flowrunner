@@ -507,7 +507,7 @@ mod tests {
 
         job.tasks = vec![task1.clone(), task2.clone(), task3.clone(), task4.clone()];
 
-        job.run(None).await.unwrap();
+        job.run(None, None).await.unwrap();
 
         let mut expected = job_result!(
             "task-1" => serde_json::to_value(plugin_exec_result!(
@@ -555,7 +555,7 @@ mod tests {
         job.result.clear();
 
         job.tasks = vec![task1.clone(), task2.clone(), task3.clone(), task4.clone()];
-        job.run(None).await.unwrap();
+        job.run(None, None).await.unwrap();
 
         assert_eq!(expected, job.result);
 
@@ -577,7 +577,7 @@ mod tests {
         job.result.clear();
 
         job.tasks = vec![task1.clone(), task2.clone(), task3.clone(), task4.clone()];
-        job.run(None).await.unwrap();
+        job.run(None, None).await.unwrap();
 
         assert_eq!(expected, job.result);
 
@@ -587,7 +587,7 @@ mod tests {
         expected = job_result!();
 
         job.result.clear();
-        job.run(None).await.unwrap();
+        job.run(None, None).await.unwrap();
 
         assert_eq!(expected, job.result);
 
@@ -652,7 +652,7 @@ mod tests {
 
         job.tasks = vec![task1.clone(), task2.clone(), task3.clone(), task4.clone()];
 
-        job.run(Some("task-2,task-3")).await.unwrap();
+        job.run(Some("task-2,task-3"), None).await.unwrap();
 
         let mut expected = job_result!(
             "task-2" => serde_json::to_value(plugin_exec_result!(
@@ -686,7 +686,7 @@ mod tests {
         job.result.clear();
 
         job.tasks = vec![task1.clone(), task2.clone(), task3.clone(), task4.clone()];
-        job.run(Some("task-1,task-4")).await.unwrap();
+        job.run(Some("task-1,task-4"), None).await.unwrap();
 
         assert_eq!(expected, job.result);
     }
