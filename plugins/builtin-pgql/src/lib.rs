@@ -392,7 +392,7 @@ impl Plugin for Pgql {
         params
     }
 
-    fn set_datastore(&self, _datastore: Option<BoxStore>) {}
+    fn set_datastore(&mut self, _datastore: Option<BoxStore>) {}
 
     fn validate_params(&mut self, params: Map<String, Value>) -> Result<()> {
         let jops_params = JsonOps::new(Value::Object(params));

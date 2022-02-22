@@ -102,7 +102,7 @@ impl Plugin for KafkaProducer {
         Ok(())
     }
 
-    fn set_datastore(&self, _datastore: Option<BoxStore>) {}
+    fn set_datastore(&mut self, _datastore: Option<BoxStore>) {}
 
     async fn func(&self, _sender: Option<String>, _rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
        let _ =  env_logger::try_init();

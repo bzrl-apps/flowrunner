@@ -59,7 +59,7 @@ impl Plugin for Shell {
         Ok(())
     }
 
-    fn set_datastore(&self, _datastore: Option<BoxStore>) {}
+    fn set_datastore(&mut self, _datastore: Option<BoxStore>) {}
 
     async fn func(&self, _sender: Option<String>, _rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
         //let mut result: Map<String, Value> = Map::new();

@@ -102,7 +102,7 @@ impl Plugin for JsonPatch {
         Ok(())
     }
 
-    fn set_datastore(&self, _datastore: Option<BoxStore>) {}
+    fn set_datastore(&mut self, _datastore: Option<BoxStore>) {}
 
     /// Apply operation per operation on target in the order. The result of previous operation will
     /// be used for the next operation.

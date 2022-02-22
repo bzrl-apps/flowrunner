@@ -64,7 +64,7 @@ pub trait Plugin {
     fn get_version(&self) -> String;
     fn get_description(&self) -> String;
     fn get_params(&self) -> Map<String, Value>;
-    fn set_datastore(&self, datastore: Option<BoxStore>);
+    fn set_datastore(&mut self, datastore: Option<BoxStore>);
     fn validate_params(&mut self, params: Map<String, Value>) -> Result<()>;
     //fn set_kvstore(&self, store: dyn KVStore);
     async fn func(&self, sender: Option<String>, rx: &Vec<Sender<FlowMessage>>, tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult;
