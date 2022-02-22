@@ -31,7 +31,8 @@ members = [
   "plugins/builtin-uri",
   "plugins/builtin-pgql",
   "plugins/builtin-kafka-producer",
-  "plugins/builtin-json-patch"
+  "plugins/builtin-json-patch",
+  "plugins/builtin-datastore"
 ]
 
 #[lib]

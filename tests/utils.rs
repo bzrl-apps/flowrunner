@@ -13,6 +13,8 @@ use rdkafka::{
 
 use sqlx::postgres::{PgPool, PgPoolOptions};
 
+use rocksdb::{DB, Options, ColumnFamilyDescriptor};
+
 use log::info;
 
 pub fn init_log() {
@@ -94,4 +96,44 @@ created_at timestamp with time zone DEFAULT now()
         .unwrap();
 
     pool
+}
+
+pub fn cleanup_rocksdb(path: &str, namespaces: &[&str]) {
+    //let mut cfs: Vec<ColumnFamilyDescriptor> = Vec::new();
+    let options = rocksdb::Options::default();
+    // list existing ColumnFamilies in the given path. returns Err when no DB exists.
+    let cfs_old = rocksdb::DB::list_cf(&options, path).unwrap_or(vec![]);
+    if cfs_old.len() > 0 {
+        let mut instance = rocksdb::DB::open_cf(&options, path, cfs_old.clone()).unwrap();
+        for cf in namespaces.iter() {
+            info!("Deleting namespace: {}", cf);
+            // open a DB with specifying ColumnFamilies
+            let _ = instance.drop_cf(cf);
+        }
+    }
+
+    //for cf in namespaces.iter() {
+        //info!("Add namespaces to create: {cf}");
+        //cfs.push(ColumnFamilyDescriptor::new(cf.to_owned(), rocksdb::Options::default()));
+    //}
+
+    //info!("Open a rocksdb at the path: {path}");
+    //DB::open_cf_descriptors_with_ttl(&rocksdb::Options::default(), path, cfs, Duration::from_secs(ttl)).unwrap()
+}
+
+pub fn open_rocksdb(path: &str, namespaces: &[&str], ttl: u64) -> DB {
+    let mut cfs: Vec<ColumnFamilyDescriptor> = Vec::new();
+    let options = rocksdb::Options::default();
+
+    for cf in namespaces.iter() {
+        info!("Add namespaces to create: {cf}");
+        cfs.push(ColumnFamilyDescriptor::new(cf.to_owned(), rocksdb::Options::default()));
+    }
+
+    info!("Open a rocksdb at the path: {path}");
+    if ttl > 0 {
+        return DB::open_cf_descriptors_with_ttl(&options, path, cfs, Duration::from_secs(ttl)).unwrap()
+    }
+
+    DB::open_cf_descriptors(&options, path, cfs).unwrap()
 }
