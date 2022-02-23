@@ -51,7 +51,7 @@ impl Store for RocksDB {
         }
     }
 
-    fn save(&self, ns: &str, k: &str, v: &str) -> Result<()> {
+    fn set(&self, ns: &str, k: &str, v: &str) -> Result<()> {
         if let Some(cf) = self.db.cf_handle(ns) {
             if let Err(e) = self.db.put_cf(cf, k.as_bytes(), v.as_bytes()) {
                 return Err(anyhow!(e));
@@ -63,7 +63,7 @@ impl Store for RocksDB {
         Err(anyhow!("{}", format!("{} not found", ns)))
     }
 
-    fn find(&self, ns: &str, k: &str) -> Result<String> {
+    fn get(&self, ns: &str, k: &str) -> Result<String> {
         if let Some(cf) = self.db.cf_handle(ns) {
             match self.db.get_cf(cf, k.as_bytes()) {
                 Ok(Some(v)) => {

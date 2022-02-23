@@ -95,15 +95,15 @@ impl Plugin for DataStore {
                     }
 
                     // Check if op is supported
-                    let ops = vec!["find", "save", "delete"];
+                    let ops = vec!["get", "set", "delete"];
 
                     if !ops.contains(&o.action.as_str()) {
-                        return Err(anyhow!("Op must have one of the following values: find, save & delete"));
+                        return Err(anyhow!("Op must have one of the following values: get, set & delete"));
                     }
 
                     // Check if value is None when action is add or replace
-                    if o.action.as_str() == "save" && o.value.is_none() {
-                        return Err(anyhow!("Value must be specified when Op is save"));
+                    if o.action.as_str() == "set" && o.value.is_none() {
+                        return Err(anyhow!("Value must be specified when Op is set"));
                     }
                 }
 
@@ -142,11 +142,11 @@ impl Plugin for DataStore {
                 continue;
             }
 
-            if op.action == "save" {
+            if op.action == "set" {
                 if let Some(v) = op.value.clone() {
                     let s = serde_json::to_string(&v).unwrap_or("".to_string());
 
-                    if let Err(e) = store.save(op.namespace.as_str(), op.key.as_str(), s.as_str()) {
+                    if let Err(e) = store.set(op.namespace.as_str(), op.key.as_str(), s.as_str()) {
                         return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: {}", idx, op.namespace, op.key, e.to_string()));
                     }
 
@@ -162,8 +162,8 @@ impl Plugin for DataStore {
                 }
             }
 
-            if op.action == "find" {
-                match store.find(op.namespace.as_str(), op.key.as_str()) {
+            if op.action == "get" {
+                match store.get(op.namespace.as_str(), op.key.as_str()) {
                     Ok(s) => {
                         result.output.insert(idx.to_string(), Value::Object(json_map!(
                                 "namespace" => Value::String(op.namespace.clone()),
@@ -220,13 +220,13 @@ mod tests {
             "ops": [
                 {
                     "namespace": "ns1",
-                    "action": "save",
+                    "action": "set",
                     "key": "key1",
                     "value": "new text"
                 },
                 {
                     "namespace": "ns1",
-                    "action": "find",
+                    "action": "get",
                     "key": "key1"
                 },
                 {

@@ -8,8 +8,8 @@ pub type BoxStore = Box<dyn Store + Send + Sync>;
 
 pub trait Store: StoreClone {
     fn list_namespaces(&self) -> Result<Vec<String>>;
-    fn save(&self, ns: &str, k: &str, v: &str) -> Result<()>;
-    fn find(&self, ns: &str, k: &str) -> Result<String>;
+    fn set(&self, ns: &str, k: &str, v: &str) -> Result<()>;
+    fn get(&self, ns: &str, k: &str) -> Result<String>;
     fn delete(&self, ns: &str, k: &str) -> Result<()>;
 }
 
