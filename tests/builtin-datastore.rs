@@ -60,12 +60,12 @@ jobs:
         ops:
         - namespace: ns1
           cond: "true"
-          action: save
+          action: set
           key: "{{ context.data.username }}"
           value: "{{ context.data.password }}"
         - namespace: ns1
           cond: "{{ context.data.username == 'test2' }}"
-          action: save
+          action: set
           key: "{{ context.data.username }}"
           value: test222
         - namespace: ns1

@@ -1,5 +1,5 @@
 use std::time::Duration;
-use rocksdb::{DB, Options, ColumnFamilyDescriptor};
+use rocksdb::{DB, Options, ColumnFamilyDescriptor, SliceTransform};
 use std::{sync::Arc, collections::HashMap};
 
 use serde_json::{Map, Value};
@@ -23,7 +23,13 @@ impl RocksDB {
         let mut ns_opts: HashMap<String, Options> = HashMap::new();
 
         for ns in config.namespaces.iter() {
-            let cf_opts = set_opts(ns.options.clone());
+            let prefix_len = ns.prefix_len.unwrap_or(0);
+            let mut cf_opts = set_opts(ns.options.clone());
+
+            if prefix_len > 0 {
+                cf_opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(prefix_len));
+            }
+
             cfs.push(ColumnFamilyDescriptor::new(ns.name.clone(), cf_opts.clone()));
             ns_opts.insert(ns.name.clone(), cf_opts.clone());
         }
@@ -52,22 +58,20 @@ impl Store for RocksDB {
     }
 
     fn set(&self, ns: &str, k: &str, v: &str) -> Result<()> {
-        if let Some(cf) = self.db.cf_handle(ns) {
-            if let Err(e) = self.db.put_cf(cf, k.as_bytes(), v.as_bytes()) {
-                return Err(anyhow!(e));
-            }
-
-            return Ok(());
+        match self.db.cf_handle(ns) {
+            Some(cf) => {
+                self.db.put_cf(cf, k.as_bytes(), v.as_bytes())?;
+                Ok(())
+            },
+            None => Err(anyhow!("{}", format!("{} not found", ns))),
         }
-
-        Err(anyhow!("{}", format!("{} not found", ns)))
     }
 
     fn get(&self, ns: &str, k: &str) -> Result<String> {
         if let Some(cf) = self.db.cf_handle(ns) {
             match self.db.get_cf(cf, k.as_bytes()) {
                 Ok(Some(v)) => {
-                    let result = String::from_utf8(v).unwrap();
+                    let result = String::from_utf8(v)?;
 
                     debug!("Finding '{}' returns '{}'", k, result);
 
@@ -88,15 +92,30 @@ impl Store for RocksDB {
     }
 
     fn delete(&self, ns: &str, k: &str) -> Result<()> {
-        if let Some(cf) = self.db.cf_handle(ns) {
-            if let Err(e) = self.db.delete_cf(cf, k.as_bytes()) {
-                return Err(anyhow!(e));
-            }
-
-            return Ok(());
+        match self.db.cf_handle(ns) {
+            Some(cf) => {
+                self.db.delete_cf(cf, k.as_bytes())?;
+                Ok(())
+            },
+            None => Err(anyhow!("{}", format!("{} not found", ns))),
         }
+    }
 
-        Err(anyhow!("{}", format!("{} not found", ns)))
+    fn find(&self, ns: &str, prefix: &str) -> Result<Map<String, Value>> {
+        let mut result: Map<String, Value> = Map::new();
+
+        match self.db.cf_handle(ns) {
+            Some(cf) => {
+                for (k, v) in self.db
+                        .prefix_iterator_cf(cf, prefix.as_bytes())
+                {
+                    result.insert(String::from_utf8(k.to_vec())?, serde_json::from_slice(&v.to_vec())?);
+                }
+
+                Ok(result)
+            },
+            None => Err(anyhow!("{}", format!("{} not found", ns))),
+        }
     }
 }
 

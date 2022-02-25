@@ -11,6 +11,7 @@ pub trait Store: StoreClone {
     fn set(&self, ns: &str, k: &str, v: &str) -> Result<()>;
     fn get(&self, ns: &str, k: &str) -> Result<String>;
     fn delete(&self, ns: &str, k: &str) -> Result<()>;
+    fn find(&self, ns: &str, k: &str) -> Result<Map<String, Value>>;
 }
 
 pub trait StoreClone {
@@ -50,6 +51,7 @@ pub struct StoreConfig {
 #[derive(Default, Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct StoreNamespace {
     pub name: String,
+    pub prefix_len: Option<usize>,
     pub options: Map<String, Value>
 }
 

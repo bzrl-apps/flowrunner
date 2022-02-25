@@ -51,7 +51,7 @@ impl fmt::Debug for DataStore {
 #[derive(Default, Debug ,Serialize, Deserialize, Clone)]
 struct Op {
     namespace: String,
-    cond: String,
+    cond: Option<String>,
     key: String,
     value: Option<Value>,
     action: String,
@@ -95,10 +95,10 @@ impl Plugin for DataStore {
                     }
 
                     // Check if op is supported
-                    let ops = vec!["get", "set", "delete"];
+                    let ops = vec!["get", "set", "delete", "find"];
 
                     if !ops.contains(&o.action.as_str()) {
-                        return Err(anyhow!("Op must have one of the following values: get, set & delete"));
+                        return Err(anyhow!("Op must have one of the following values: get, set, delete & find"));
                     }
 
                     // Check if value is None when action is add or replace
@@ -138,55 +138,69 @@ impl Plugin for DataStore {
 
         for (idx, op) in self.ops.iter().enumerate() {
             // Check cond, if false, zap the operation
-            if !eval_boolean(op.cond.as_str()).unwrap_or(false) {
+            let cond = op.cond.clone();
+            if !eval_boolean(cond.unwrap_or("true".to_string()).as_str()).unwrap_or(false) {
                 continue;
             }
 
-            if op.action == "set" {
-                if let Some(v) = op.value.clone() {
-                    let s = serde_json::to_string(&v).unwrap_or("".to_string());
+            match op.action.as_str() {
+                "set" => {
+                    if let Some(v) = op.value.clone() {
+                        let s = serde_json::to_string(&v).unwrap_or("".to_string());
 
-                    if let Err(e) = store.set(op.namespace.as_str(), op.key.as_str(), s.as_str()) {
-                        return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: {}", idx, op.namespace, op.key, e.to_string()));
-                    }
+                        if let Err(e) = store.set(op.namespace.as_str(), op.key.as_str(), s.as_str()) {
+                            return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: {}", idx, op.namespace, op.key, e.to_string()));
+                        }
 
 
-                    result.output.insert(idx.to_string(), Value::Object(json_map!(
-                            "namespace" => Value::String(op.namespace.clone()),
-                            "key" => Value::String(op.key.clone()),
-                            "value" => Value::String(s),
-                            "action" => Value::String(op.action.clone())
-                    )));
-                } else {
-                    return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: for replace action, value must be specified", idx, op.namespace, op.key));
-                }
-            }
-
-            if op.action == "get" {
-                match store.get(op.namespace.as_str(), op.key.as_str()) {
-                    Ok(s) => {
                         result.output.insert(idx.to_string(), Value::Object(json_map!(
                                 "namespace" => Value::String(op.namespace.clone()),
                                 "key" => Value::String(op.key.clone()),
                                 "value" => Value::String(s),
                                 "action" => Value::String(op.action.clone())
                         )));
-                    },
-                    Err(e) => { return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: {}", idx, op.namespace, op.key, e.to_string())); },
-                }
+                    } else {
+                        return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: for replace action, value must be specified", idx, op.namespace, op.key));
+                    }
+                },
+                "get" => {
+                    match store.get(op.namespace.as_str(), op.key.as_str()) {
+                        Ok(s) => {
+                            result.output.insert(idx.to_string(), Value::Object(json_map!(
+                                    "namespace" => Value::String(op.namespace.clone()),
+                                    "key" => Value::String(op.key.clone()),
+                                    "value" => Value::String(s),
+                                    "action" => Value::String(op.action.clone())
+                            )));
+                        },
+                        Err(e) => { return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: {}", idx, op.namespace, op.key, e.to_string())); },
+                    }
+                },
+                "delete" => {
+                    if let Err(e) = store.delete(op.namespace.as_str(), op.key.as_str()) {
+                        return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: {}", idx, op.namespace, op.key, e.to_string()));
+                    }
 
-            }
-
-            if op.action == "delete" {
-                if let Err(e) = store.delete(op.namespace.as_str(), op.key.as_str()) {
-                    return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: {}", idx, op.namespace, op.key, e.to_string()));
-                }
-
-                result.output.insert(idx.to_string(), Value::Object(json_map!(
-                        "namespace" => Value::String(op.namespace.clone()),
-                        "key" => Value::String(op.key.clone()),
-                        "action" => Value::String(op.action.clone())
-                )));
+                    result.output.insert(idx.to_string(), Value::Object(json_map!(
+                            "namespace" => Value::String(op.namespace.clone()),
+                            "key" => Value::String(op.key.clone()),
+                            "action" => Value::String(op.action.clone())
+                    )));
+                },
+                "find" => {
+                    match store.find(op.namespace.as_str(), op.key.as_str()) {
+                        Ok(m) => {
+                            result.output.insert(idx.to_string(), Value::Object(json_map!(
+                                    "namespace" => Value::String(op.namespace.clone()),
+                                    "key" => Value::String(op.key.clone()),
+                                    "value" => Value::Object(m),
+                                    "action" => Value::String(op.action.clone())
+                            )));
+                        },
+                        Err(e) => { return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: {}", idx, op.namespace, op.key, e.to_string())); },
+                    }
+                },
+                _ => { return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: {} unknown", idx, op.namespace, op.key, op.action)) }
             }
         }
 
@@ -205,16 +219,42 @@ pub fn get_plugin() -> *mut (dyn Plugin + Send + Sync) {
 
 #[cfg(test)]
 mod tests {
-    use flowrunner::plugin_exec_result;
+    use flowrunner::{
+        plugin_exec_result,
+        datastore::store::StoreConfig,
+    };
 
     use super::*;
 
     #[tokio::test]
-    async fn test_replace() {
+    async fn test_func() {
         let txs = Vec::<Sender<FlowMessage>>::new();
         let rxs = Vec::<Receiver<FlowMessage>>::new();
 
+        let config: StoreConfig = serde_json::from_str(r#"{
+            "conn_str": "/tmp/rocksdb",
+            "kind": "rocksdb",
+            "options": {
+                "create_if_missing": true,
+                "create_missing_column_families": true
+            },
+            "ttl": 0,
+            "namespaces": [
+                {
+                    "name": "ns1",
+                    "prefix_len": 3,
+                    "options": {
+                        "create_if_missing": true,
+                        "create_missing_column_families": true
+                    }
+                }
+            ]
+        }"#).unwrap();
+
+        let db = config.new_store().unwrap();
+
         let mut datastore = DataStore::default();
+        datastore.ds = Some(db);
 
         let params: Map<String, Value> = serde_json::from_str(r#"{
             "ops": [
@@ -222,7 +262,13 @@ mod tests {
                     "namespace": "ns1",
                     "action": "set",
                     "key": "key1",
-                    "value": "new text"
+                    "value": "value1"
+                },
+                {
+                    "namespace": "ns1",
+                    "action": "set",
+                    "key": "key2",
+                    "value": "value2"
                 },
                 {
                     "namespace": "ns1",
@@ -231,8 +277,24 @@ mod tests {
                 },
                 {
                     "namespace": "ns1",
+                    "action": "set",
+                    "key": "key1",
+                    "value": "value111"
+                },
+                {
+                    "namespace": "ns1",
+                    "action": "find",
+                    "key": "key"
+                },
+                {
+                    "namespace": "ns1",
                     "action": "delete",
-                    "key": "key1"
+                    "key": "key2"
+                },
+                {
+                    "namespace": "ns1",
+                    "action": "find",
+                    "key": "key"
                 }
             ]
         }"#).unwrap();
@@ -242,25 +304,53 @@ mod tests {
         let expected = plugin_exec_result!(
             Status::Ok,
             "",
-            "result" => serde_json::from_str(r#"{
-                "string": "new_text",
-                "boolean": false,
-                "int": 10,
-                "float": 15.6,
-                "arr_str": ["str1", "newstr2", "str3"],
-                "arr_int": [1, 2, 3000],
-                "arr_bool": [true, true],
-                "arr_mixted": [10, true, "str1", "newstr"],
-                "object": {
-                    "field1": "text1",
-                    "field2": 3000,
-                    "field3": [1, 2, 1],
-                    "field4": {
-                        "field41": 1,
-                        "field42": true
-                    }
-                }
-        }"#).unwrap());
+            "0" => serde_json::from_str(r#"{
+                "namespace": "ns1",
+                "key": "key1",
+                "value": "\"value1\"",
+                "action": "set"
+            }"#).unwrap(),
+            "1" => serde_json::from_str(r#"{
+                "namespace": "ns1",
+                "key": "key2",
+                "value": "\"value2\"",
+                "action": "set"
+            }"#).unwrap(),
+            "2" => serde_json::from_str(r#"{
+                "namespace": "ns1",
+                "key": "key1",
+                "value": "\"value1\"",
+                "action": "get"
+            }"#).unwrap(),
+            "3" => serde_json::from_str(r#"{
+                "namespace": "ns1",
+                "key": "key1",
+                "value": "\"value111\"",
+                "action": "set"
+            }"#).unwrap(),
+            "4" => serde_json::from_str(r#"{
+                "namespace": "ns1",
+                "key": "key",
+                "value": {
+                    "key1": "value111",
+                    "key2": "value2"
+                },
+                "action": "find"
+            }"#).unwrap(),
+            "5" => serde_json::from_str(r#"{
+                "namespace": "ns1",
+                "key": "key2",
+                "action": "delete"
+            }"#).unwrap(),
+            "6" => serde_json::from_str(r#"{
+                "namespace": "ns1",
+                "key": "key",
+                "value": {
+                    "key1": "value111"
+                },
+                "action": "find"
+            }"#).unwrap()
+        );
 
         let result = datastore.func(None, &txs, &rxs).await;
 

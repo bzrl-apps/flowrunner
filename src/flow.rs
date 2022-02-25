@@ -383,6 +383,11 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                                 return Err(anyhow!("datastore namespace's name must not be empty!"));
                             }
 
+                            // Check prefix_len
+                            if let Some(v) = s.get(&yamlValue::String("prefix_len".to_string())) {
+                                ns.prefix_len = Some(v.as_u64().unwrap_or(0) as usize);
+                            }
+
                             // Check options
                             if let Some(v1) = s.get(&yamlValue::String("options".to_string())) {
                                 let mut options = Map::new();
@@ -972,8 +977,8 @@ sinks:
         datastore.kind = "rocksdb".to_string();
         datastore.conn_str = "/tmp/rocksdb".to_string();
         datastore.namespaces = vec![
-            StoreNamespace {name: "ns1".to_string(), options: Map::new()},
-            StoreNamespace {name: "ns2".to_string(), options: Map::new()},
+            StoreNamespace {name: "ns1".to_string(), prefix_len: None,  options: Map::new()},
+            StoreNamespace {name: "ns2".to_string(), prefix_len: None, options: Map::new()},
         ];
 
         let expected = Flow {
