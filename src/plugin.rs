@@ -6,6 +6,7 @@ use dlopen_derive::SymBorApi;
 use lazy_static::lazy_static;
 //use std::sync::Mutex;
 
+use core::panic;
 //use futures::lock::Mutex;
 use std::sync::Mutex;
 
@@ -138,7 +139,13 @@ impl PluginRegistry {
     pub async fn load_plugins(dir: &str) {
         let mut pr = PLUGIN_REGISTRY.lock().unwrap();
 
-        let pattern = dir.to_owned() + "/" + "*.dylib";
+        let os_type = sys_info::os_type().unwrap();
+
+        let pattern = match os_type.to_lowercase().as_str() {
+            "linux" => dir.to_owned() + "/" + "*.so",
+            "darwin" => dir.to_owned() + "/" + "*.dylib",
+            _ => panic!("OS type {} not supported", os_type),
+        };
 
         for entry in glob(pattern.as_str()).expect("Failed to read files *.so in the specified plugin directory") {
             match entry {

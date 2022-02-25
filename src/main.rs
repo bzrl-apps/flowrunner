@@ -2,6 +2,7 @@ extern crate lazy_static;
 extern crate log;
 extern crate clap;
 extern crate json_ops;
+extern crate sys_info;
 
 use log::{info, error};
 
