@@ -39,11 +39,13 @@ async fn main() {
                         .arg(Arg::with_name("plugin-dir")
                             .short("p")
                             .long("--plugin-dir")
+                            .default_value("plugins")
                             .takes_value(true)
                             .help("Module directory"))
                         .arg(Arg::with_name("flow-dir")
                             .short("w")
                             .long("--flow-dir")
+                            .default_value("flows")
                             .takes_value(true)
                             .help("Flow directory"))
                         .subcommand(
@@ -60,7 +62,7 @@ async fn main() {
 
     // Gets a value for config if supplied by user, or defaults to ".mgr.yaml"
     let config_file = matches.value_of("config");
-    let mut config = config::new(config_file.unwrap_or(".semrel-rs.yaml")).unwrap();
+    let mut config = config::new(config_file.unwrap_or(".flowrunner.yaml")).unwrap();
     info!("--- Configuration ---");
     info!("File: {:?}", config_file);
     info!("Content: {:?}", config);

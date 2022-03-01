@@ -1,0 +1,169 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+    tags-ignore:
+      - "*.*"
+
+env:
+  GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+  PLEZI_PAT: ${{secrets.PLEZI_PAT}}
+  CI_USER_NAME: ci-mgr
+  CI_USER_EMAIL: ci-mgrr@uthng.me
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+jobs:
+  check_test_build:
+    name: Check, test & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - uses: wagoid/commitlint-github-action@v2
+
+      - name: Install latest stable
+        uses: actions-rs/toolchain@v1
+        with:
+            toolchain: stable
+            override: true
+            components: rustfmt, clippy
+
+      - name: Check linters
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all-features
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Launch unit tests
+        run: make cross-test
+
+      - name: Restore Cache
+        uses: actions/cache@v1
+        id: cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      #- name: Launch integration tests
+        #run: make test-integration
+        #
+      - name: Build multiple platforms
+        run: make cross-build
+
+      - name: Archive generated binaries
+        uses: actions/upload-artifact@v2
+        with:
+          name: mgr binaries
+          path: |
+            target
+          retention-days: 1
+
+
+  prerelease:
+    needs: [check_test_build]
+    name: Pre-release
+    runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/next' }}
+    steps:
+      - name: Display variables & commit message
+        run: |
+          echo "GITHUB_EVENT_NAME: ${GITHUB_EVENT_NAME}"
+          echo "GITHUB_REF: ${GITHUB_REF}"
+          echo "GITHUB_SHA: ${GITHUB_SHA}"
+
+      - name: Check out code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Download generated binaries
+        uses: actions/download-artifact@v2
+        with:
+          name: mgr binaries
+          path: ./target
+
+      - name: View current directory
+        run: ls -lR
+
+      - name: Fetch tags
+        run: |
+          git fetch --tags
+
+      - name: Git Setup
+        run: |
+          git config --global user.email $CI_USER_EMAIL
+          git config --global user.name $CI_USER_NAME
+          git config --global pull.ff only
+          git checkout -b ci_processing
+
+      - uses: actions/setup-node@v1
+        with:
+          node-version: 14
+
+      - name: Next release
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        run: npx -p conventional-changelog-conventionalcommits -p @semantic-release/changelog -p @semantic-release/git -p @semantic-release/exec -p @semantic-release/github -p semantic-release semantic-release
+
+  release:
+    needs: [check_test_build]
+    name: Release
+    runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/master' }}
+    steps:
+      - name: Display variables & commit message
+        run: |
+          echo "GITHUB_EVENT_NAME: ${GITHUB_EVENT_NAME}"
+          echo "GITHUB_REF: ${GITHUB_REF}"
+          echo "GITHUB_SHA: ${GITHUB_SHA}"
+
+      - name: Check out code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Download generated binaries
+        uses: actions/download-artifact@v2
+        with:
+          name: mgr binaries
+          path: ./target
+
+      - name: View current directory
+        run: ls -lR
+
+      - name: Fetch tags
+        run: |
+          git fetch --tags
+
+      - name: Git Setup
+        run: |
+          git config --global user.email $CI_USER_EMAIL
+          git config --global user.name $CI_USER_NAME
+          git config --global pull.ff only
+          git checkout -b ci_processing
+          #
+      - uses: actions/setup-node@v1
+        with:
+          node-version: 14
+
+      - name: Master release
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        run: npx -p conventional-changelog-conventionalcommits -p @semantic-release/changelog -p @semantic-release/git -p @semantic-release/exec -p @semantic-release/github -p semantic-release semantic-release
+
+      - name: Update back next
+        run: |
+          git checkout next
+          git pull origin next
+          git merge --no-ff master next -X theirs -m "chore(merge): auto merge master to next"
+          git push origin next
