@@ -771,7 +771,7 @@ dependencies = [
 
 [[package]]
 name = "flowrunner"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-channel",

@@ -10,8 +10,8 @@ on:
 env:
   GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
   PLEZI_PAT: ${{secrets.PLEZI_PAT}}
-  CI_USER_NAME: ci-mgr
-  CI_USER_EMAIL: ci-mgrr@uthng.me
+  CI_USER_NAME: ci
+  CI_USER_EMAIL: ci@uthng.me
   DOCKER_BUILDKIT: 1
   COMPOSE_DOCKER_CLI_BUILD: 1
 
@@ -63,7 +63,7 @@ jobs:
       - name: Archive generated binaries
         uses: actions/upload-artifact@v2
         with:
-          name: mgr binaries
+          name: target
           path: |
             target
           retention-days: 1
@@ -89,7 +89,7 @@ jobs:
       - name: Download generated binaries
         uses: actions/download-artifact@v2
         with:
-          name: mgr binaries
+          name: target
           path: ./target
 
       - name: View current directory

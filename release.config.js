@@ -74,8 +74,8 @@ config.plugins.push(
     "@semantic-release/github",
     {
       "assets": [
-        {"path": "dist/mgr-*-aarch64-unknown-linux-gnu.tar.gz", "label": "mgr-${nextRelease.version}-aarch64-unknown-linux-gnu"},
-        {"path": "dist/mgr-*-x86_64-apple-darwin.tar.gz", "label": "mgr-${nextRelease.version}-x86_64-apple-darwin4"},
+        {"path": "dist/flowrunner-*-x86_64-unknown-linux-gnu.tar.gz", "label": "flowrunner-${nextRelease.version}-x84_64-unknown-linux-gnu"},
+        {"path": "dist/flowrunner-*-x86_64-apple-darwin.tar.gz", "label": "flowrunner-${nextRelease.version}-x86_64-apple-darwin4"},
       ]
     }
   ],
