@@ -155,6 +155,51 @@ pub fn render_text_template(component: &str, text: &mut String, data: &Map<Strin
     Ok(())
 }
 
+pub fn render_loop_template(component: &str, value: &Value, data: &Map<String, Value>) -> Result<Value> {
+    debug!("Rendering loop templating: component {}, value {}, data {:?}", component, value, data);
+
+    let mut tera = Tera::default();
+    let exp_env_v = expand_env_value(value);
+
+    let context = match Context::from_value(Value::Object(data.to_owned())) {
+        Ok(c) => c,
+        Err(e) => return Err(anyhow!(e)),
+    };
+
+    match exp_env_v {
+        Value::Array(arr) => {
+            let mut v: Vec<Value> = vec![];
+            for e in arr.into_iter() {
+                if let Some(s) = e.as_str() {
+                    match tera.render_str(s, &context) {
+                        Ok(s1) => v.push(Value::String(s1)),
+                        Err(e) => { return Err(anyhow!(e)) },
+                    }
+                } else {
+                    v.push(e);
+                }
+            }
+
+            return Ok(Value::Array(v));
+        },
+        Value::String(s) => {
+            match tera.render_str(s.as_str(), &context) {
+                Ok(s1) => {
+                    let val: Value = serde_json::from_str(s1.as_str())?;
+
+                    if val.as_array().is_none() {
+                        return Err(anyhow!("Value must be an array"));
+                    }
+
+                    return Ok(val)
+                },
+                Err(e) => Err(anyhow!(e))
+            }
+        },
+        _ => Err(anyhow!("Loop must be a array of items or template string")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,15 +228,15 @@ mod tests {
         env_logger::init();
 
         let input = json!({
-            "var1": "$VAR1",
+            "var1": "${VAR1}",
             "var2": [
                 "1",
-                "$VAR21",
+                "${VAR21}",
                 "3",
             ],
             "var3": [
                 "var31",
-                "$VAR32",
+                "${VAR32}",
                 "var33",
             ],
             "var4": {
@@ -200,7 +245,7 @@ mod tests {
                     "var412": "${VAR412}"
                 },
                 "var42": "var42",
-                "var43": "$VAR43"
+                "var43": "${VAR43}"
             }
         });
 
@@ -236,5 +281,55 @@ mod tests {
         });
 
         assert_eq!(expected.as_object().unwrap(), &expanded_m);
+    }
+
+    #[test]
+    fn test_render_loop_template() {
+        env_logger::init();
+
+        let input = json!({
+            "var1": "${VAR1}",
+            "var2": [
+                "1",
+                "${VAR21}",
+                "3",
+            ],
+            "var3": [
+                "var31",
+                "${VAR32}",
+                "var33"
+            ],
+            "var4": {
+                "var41": {
+                    "var411": "var411",
+                    "var412": "${VAR412}"
+                },
+                "var42": "var42",
+                "var43": "${VAR43}"
+            }
+        });
+
+        envmnt::set("VAR1", "var1");
+        envmnt::set("VAR21", "2");
+        envmnt::set("VAR32", "var32");
+        envmnt::set("VAR412", "var412");
+        envmnt::set("VAR43", "var43");
+
+        let mut data = input.as_object().unwrap().to_owned();
+        expand_env_map(&mut data);
+
+        let mut result = render_loop_template("test", &Value::String("{{ var2 }}".to_string()), &data).unwrap();
+
+        assert_eq!(json!([1, 2, 3]), result);
+
+        result = render_loop_template("test", &Value::String("{{ var3 | json_encode() | safe }}".to_string()), &data).unwrap();
+
+        assert_eq!(json!(["var31", "var32", "var33"]), result);
+
+        result = render_loop_template("test", &json!(["{{ var1 }}", "{{ var4['var42'] | as_str }}"]), &data).unwrap();
+
+        assert_eq!(json!(["var1", "var42"]), result);
+
+        assert_eq!("Value must be an array", render_loop_template("test", &json!("{{ var4 | json_encode() | safe }}"), &data).unwrap_err().to_string().as_str());
     }
 }

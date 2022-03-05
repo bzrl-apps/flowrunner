@@ -42,7 +42,7 @@ pub struct Flow {
     #[serde(default)]
     pub name: String,
     #[serde(default)]
-	pub variables:  Map<String, jsonValue>,
+    pub variables:  Map<String, jsonValue>,
 
     #[serde(default)]
     pub kind: Kind,
@@ -53,18 +53,18 @@ pub struct Flow {
     #[serde(default)]
     pub sources: Vec<Source>,
     #[serde(default)]
-	pub jobs: Vec<Job>,
+    pub jobs: Vec<Job>,
     #[serde(default)]
     pub sinks: Vec<Sink>,
     //#[serde(default)]
 	//pub inventory: Inventory,
 
     #[serde(default)]
-	pub remote_plugin_dir: String,
+    pub remote_plugin_dir: String,
     #[serde(default)]
-	pub remote_exec_dir: String,
+    pub remote_exec_dir: String,
     #[serde(default)]
-	pub inventory_file: String,
+    pub inventory_file: String,
 
 	// IsOnRemote indicates if the flow file is on remote machine
 	// even if it is local
@@ -160,6 +160,15 @@ impl Flow {
             },
             _ => {
                 info!("Flow kind: Action");
+
+                let jobs = self.jobs.clone();
+                for (i, mut job) in jobs.into_iter().enumerate() {
+                    // Report global flow settings in job context
+                    job.context.insert("variables".to_string(), jsonValue::from(self.variables.clone()));
+
+                    self.jobs[i] = job;
+                }
+
                 self.launch_job_threads().await;
             },
         }
@@ -538,6 +547,30 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                                             v2.remove(&yaml_value_if);
                                         }
 
+                                        // Check if condition
+                                        let yaml_value_loop = yamlValue::String("loop".to_string());
+                                        if let Some(n) = v2.get(&yaml_value_loop) {
+                                            t.r#loop = match n.as_sequence() {
+                                                Some(seq) => {
+                                                    let mut items: Vec<jsonValue> = Vec::new();
+
+                                                    for s in seq.iter() {
+                                                        items.push(utils::convert_value_yaml_to_json(s)?);
+                                                    }
+
+                                                    Some(jsonValue::Array(items))
+                                                },
+                                                None => {
+                                                    match n.as_str() {
+                                                        Some(s) => Some(jsonValue::String(s.to_string())),
+                                                        None => None,
+                                                    }
+                                                },
+                                            };
+
+                                            v2.remove(&yaml_value_loop);
+                                        }
+
                                         // Check on_success
                                         let yaml_value_on_success = yamlValue::String("on_success".to_string());
                                         if let Some(v) = v2.get(&yaml_value_on_success) {
@@ -700,8 +733,9 @@ fn parse(mapping: Mapping) -> Result<Flow> {
 mod tests {
     use super::*;
     use crate::plugin::PluginRegistry;
+    use ::futures::TryFutureExt;
     use tokio::time::{sleep, Duration};
-    use serde_json::Number;
+    use serde_json::{Number, json};
     use rdkafka::{
         config::ClientConfig,
         //message::{Headers, Message},
@@ -754,36 +788,41 @@ sources:
 jobs:
   - hosts: host1
     tasks:
-    - shell:
+    - builtin-shell:
         params:
           cmd: "echo task1"
       name: default
+      loop:
+      - "{{ array }}"
+      - 1
+      - item1
 
   - name: job2
     if: "source == true"
     tasks:
-    - shell:
+    - builtin-shell:
         params:
           cmd: "echo task1"
       on_failure: "task-3"
-    - shell:
+    - builtin-shell:
         params:
           cmd: "echo task2"
       on_success: "task-4"
       on_failure: "task-4"
-    - shell:
+    - builtin-shell:
         params:
           cmd: "echo task3"
-    - shell:
+    - builtin-shell:
         params:
           cmd: "echo task4"
 
   - name: job3
     hosts: host3
     tasks:
-    - shell:
+    - builtin-shell:
         params:
           cmd: "echo task1"
+      loop: "{{ array }}"
 
 sinks:
 - name: pg1
@@ -883,8 +922,13 @@ sinks:
         job1_tasks.push(Task {
             name: "default".to_string(),
             r#if: None,
-            plugin: "shell".to_string(),
+            plugin: "builtin-shell".to_string(),
             params: params_task1.clone(),
+            r#loop: Some(jsonValue::Array(vec![
+                jsonValue::String("{{ array }}".to_string()),
+                jsonValue::Number(Number::from(1)),
+                jsonValue::String("item1".to_string())
+            ])),
             on_success: "".to_string(),
             on_failure: "".to_string()
         });
@@ -893,8 +937,9 @@ sinks:
         job2_tasks.push(Task {
             name: "task-1".to_string(),
             r#if: None,
-            plugin: "shell".to_string(),
+            plugin: "builtin-shell".to_string(),
             params: params_task1.clone(),
+            r#loop: None,
             on_success: "task-2".to_string(),
             on_failure: "task-3".to_string()
         });
@@ -902,8 +947,9 @@ sinks:
         job2_tasks.push(Task {
             name: "task-2".to_string(),
             r#if: None,
-            plugin: "shell".to_string(),
+            plugin: "builtin-shell".to_string(),
             params: params_task2.clone(),
+            r#loop: None,
             on_success: "task-4".to_string(),
             on_failure: "task-4".to_string()
         });
@@ -911,8 +957,9 @@ sinks:
         job2_tasks.push(Task {
             name: "task-3".to_string(),
             r#if: None,
-            plugin: "shell".to_string(),
+            plugin: "builtin-shell".to_string(),
             params: params_task3.clone(),
+            r#loop: None,
             on_success: "task-4".to_string(),
             on_failure: "".to_string()
         });
@@ -920,8 +967,9 @@ sinks:
         job2_tasks.push(Task {
             name: "task-4".to_string(),
             r#if: None,
-            plugin: "shell".to_string(),
+            plugin: "builtin-shell".to_string(),
             params: params_task4.clone(),
+            r#loop: None,
             on_success: "".to_string(),
             on_failure: "".to_string()
         });
@@ -930,8 +978,9 @@ sinks:
         job3_tasks.push(Task {
             name: "task-1".to_string(),
             r#if: None,
-            plugin: "shell".to_string(),
+            plugin: "builtin-shell".to_string(),
             params: params_task1.clone(),
+            r#loop: Some(jsonValue::String("{{ array }}".to_string())),
             on_success: "".to_string(),
             on_failure: "".to_string()
         });
@@ -999,49 +1048,112 @@ sinks:
     }
 
     #[tokio::test]
-    async fn test_run_all_jobs() {
+    async fn test_flow_run() {
         env_logger::init();
 
         let content = r#"
 name: flow1
 
+variables:
+    superloop:
+    - loop1
+    - loop2
+
+kind: action
 jobs:
   - hosts: host1
     tasks:
-    - shell:
+    - builtin-shell:
         params:
           cmd: "echo task1"
       name: default
 
   - name: job2
     tasks:
-    - shell:
+    - builtin-shell:
         params:
           cmd: "echo task1"
       on_failure: "task-3"
-    - shell:
+    - builtin-shell:
         params:
           cmd: "echo task2"
       on_success: "task-4"
       on_failure: "task-4"
-    - shell:
+    - builtin-shell:
         params:
           cmd: "echo task3"
-    - shell:
+    - builtin-shell:
         params:
           cmd: "echo task4"
 
   - name: job3
-    hosts: host3
     tasks:
-    - shell:
+    - builtin-shell:
         params:
-          cmd: "echo task1"
+          cmd: "echo {{ loop_item }}"
+      loop: "{{ context.variables.superloop | json_encode() | safe }}"
 "#;
 
-        let flow =  Flow::new_from_str(content).unwrap();
+        let mut flow =  Flow::new_from_str(content).unwrap();
+        PluginRegistry::load_plugins("target/debug").await;
 
-        run_all_jobs(flow.kind.clone(), flow.jobs.clone(), None).await.unwrap();
+        //run_all_jobs(flow.kind.clone(), flow.jobs.clone(), None).await.unwrap();
+        flow.run().await.unwrap();
+
+        // Because hosts is not local and we are not supporting remote host
+        let result_expected_1 = json!({});
+
+        let result_expected_2 = json!({
+            "task-1": {
+                "status": "Ok",
+                "error": "",
+                "output": {
+                    "rc": 0,
+                    "stdout": "task1\n"
+                }
+            },
+            "task-2": {
+                "status": "Ok",
+                "error": "",
+                "output": {
+                    "rc": 0,
+                    "stdout": "task2\n"
+                }
+            },
+            "task-4": {
+                "status": "Ok",
+                "error": "",
+                "output": {
+                    "rc": 0,
+                    "stdout": "task4\n"
+                }
+            }
+        });
+
+        let result_expected_3 = json!({
+                "task-1": [
+                    {
+                        "status": "Ok",
+                        "error": "",
+                        "output": {
+                            "rc": 0,
+                            "stdout": "loop1\n"
+                        }
+                    },
+                    {
+                        "status": "Ok",
+                        "error": "",
+                        "output": {
+                            "rc": 0,
+                            "stdout": "loop2\n"
+                        }
+                    },
+                ]
+            });
+
+        assert_eq!(result_expected_1.as_object().unwrap().to_owned(), flow.jobs[0].result);
+        assert_eq!(result_expected_2.as_object().unwrap().to_owned(), flow.jobs[1].result);
+        assert_eq!(result_expected_3.as_object().unwrap().to_owned(), flow.jobs[2].result);
     }
 
     #[tokio::test]

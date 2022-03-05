@@ -63,6 +63,8 @@ pub struct Task {
     pub plugin: String,
     #[serde(default)]
 	pub params: Map<String, Value>,
+    #[serde(default)]
+	pub r#loop: Option<Value>,
 
     #[serde(default)]
 	pub on_success: String,
@@ -163,7 +165,8 @@ impl Job {
 
             // If task condition is not satisfied, then move to next task as when the task is
             // correctly executed
-            if !self.render_task_template(&mut t)? {
+            let vec_params = self.render_task_template(&mut t)?;
+            if vec_params.len() <= 0 {
                 next_task = match t.on_success.len() {
                     n if n > 0 => self.get_task_by_name(t.on_success.as_str()),
                     _ => None,
@@ -181,21 +184,31 @@ impl Job {
 
             match PluginRegistry::get_plugin(&t.plugin) {
                 Some(mut plugin) => {
-                    plugin.validate_params(t.params.clone())?;
-                    plugin.set_datastore(bs);
-                    let res = plugin.func(Some(self.name.clone()), &self.rx, &self.tx).await;
-                    self.result.insert(t.name.clone(), serde_json::to_value(res.clone())?);
+                    let mut vec_res: Vec<Value> = Vec::new();
 
-                    info!("Task result: name {}, res: {:?}",  t.name.clone(), res);
+                    for p in vec_params.iter() {
+                        plugin.validate_params(p.clone())?;
+                        plugin.set_datastore(bs.clone());
+                        let res = plugin.func(Some(self.name.clone()), &self.rx, &self.tx).await;
+                        vec_res.push(serde_json::to_value(res.clone())?);
 
-                    if res.status == PluginStatus::Ko {
-                        // Go the task of Success if specified
-                        next_task = match t.on_failure.len() {
-                            n if n <= 0 => return Err(anyhow!(res.error)),
-                            _ => self.get_task_by_name(t.on_failure.as_str()),
-                        };
+                        info!("Task result: name {}, res: {:?}",  t.name.clone(), res);
 
-                        continue;
+                        if res.status == PluginStatus::Ko {
+                            // Go the task of Success if specified
+                            next_task = match t.on_failure.len() {
+                                n if n <= 0 => return Err(anyhow!(res.error)),
+                                _ => self.get_task_by_name(t.on_failure.as_str()),
+                            };
+
+                            break;
+                        }
+                    }
+
+                    if vec_params.len() == 1 {
+                        self.result.insert(t.name.clone(), vec_res[0].clone());
+                    } else {
+                        self.result.insert(t.name.clone(), Value::Array(vec_res));
                     }
                 },
                 None => error!("No plugin found"),
@@ -223,7 +236,8 @@ impl Job {
                     info!("Task executed: name {}, params {:?}", t.name, t.params);
 
                     // If task condition is not satisfied then move to next one
-                    if !self.render_task_template(&mut t)? {
+                    let vec_params = self.render_task_template(&mut t)?;
+                    if vec_params.len() <= 0 {
                         continue
                     }
 
@@ -236,12 +250,24 @@ impl Job {
 
                     match PluginRegistry::get_plugin(&t.plugin) {
                         Some(mut plugin) => {
-                            plugin.validate_params(t.params.clone())?;
-                            plugin.set_datastore(bs);
-                            let res = plugin.func(Some(self.name.clone()), &self.rx, &self.tx).await;
-                            self.result.insert(t.name.clone(), serde_json::to_value(res.clone())?);
+                            let mut vec_res: Vec<Value> = Vec::new();
 
-                            info!("Task result: name {}, res: {:?}",  t.name.clone(), res);
+                            for p in vec_params.iter() {
+                                plugin.validate_params(p.clone())?;
+                                plugin.set_datastore(bs.clone());
+                                let res = plugin.func(Some(self.name.clone()), &self.rx, &self.tx).await;
+                                self.result.insert(t.name.clone(), serde_json::to_value(res.clone())?);
+
+                                vec_res.push(serde_json::to_value(res.clone())?);
+
+                                info!("Task result: name {}, res: {:?}",  t.name.clone(), res);
+                            }
+
+                            if vec_params.len() == 1 {
+                                self.result.insert(t.name.clone(), vec_res[0].clone());
+                            } else {
+                                self.result.insert(t.name.clone(), Value::Array(vec_res));
+                            }
                         },
                         None => error!("No plugin with the name {} found", t.name),
                     }
@@ -289,7 +315,8 @@ impl Job {
         None
     }
 
-    fn render_task_template(&self, task: &mut Task) -> Result<bool> {
+    fn render_task_template(&self, task: &mut Task) -> Result<Vec<Map<String, Value>>> {
+        let mut vec_params: Vec<Map<String, Value>> = Vec::new();
         let mut data: Map<String, Value> = Map::new();
         let component = task.name.as_str();
 
@@ -315,21 +342,47 @@ impl Job {
                 Ok(b) => {
                     if !b {
                         debug!("{}", format!("task ignored: {}, if: {:?}, eval: {:?}", component, txt, b));
-                        return Ok(false);
+                        return Ok(vec_params);
                     }
-
-                    return Ok(true)
                 },
                 Err(e) => return Err(anyhow!(e)),
             };
         }
 
-        // Expand task's params
-        for (n, v) in task.params.clone().into_iter() {
-            task.params.insert(n.to_string(), render_param_template(component, &n, &v, &data)?);
+        // Render loop if exists
+        let mut r#loop: Value = Value::Null;
+        if let Some(l) = task.r#loop.clone() {
+            r#loop = render_loop_template(component, &l, &data)?;
         }
 
-        Ok(true)
+        if r#loop == Value::Null {
+            let mut params = Map::new();
+
+            for (n, v) in task.params.clone().into_iter() {
+                params.insert(n.to_string(), render_param_template(component, &n, &v, &data)?);
+            }
+
+            vec_params.push(params);
+        } else {
+            let mut items: Vec<Value> = Vec::new();
+            if let Some(its) = r#loop.as_array() {
+                items = its.clone();
+            };
+
+            for it in items.into_iter() {
+                data.insert("loop_item".to_string(), it);
+
+                let mut params = Map::new();
+
+                for (n, v) in task.params.clone().into_iter() {
+                    params.insert(n.to_string(), render_param_template(component, &n, &v, &data)?);
+                }
+
+                vec_params.push(params);
+            }
+        }
+
+        Ok(vec_params)
     }
 
     fn render_job_and_eval(&self) -> Result<bool> {
@@ -396,6 +449,7 @@ mod tests {
             r#if: None,
             plugin: "shell".to_string(),
             params: params_task1.clone(),
+            r#loop: None,
             on_success: "task-2".to_string(),
             on_failure: "task-3".to_string()
         };
@@ -405,6 +459,7 @@ mod tests {
             r#if: None,
             plugin: "builtin-shell".to_string(),
             params: params_task2.clone(),
+            r#loop: None,
             on_success: "task-4".to_string(),
             on_failure: "task-4".to_string()
         };
@@ -414,6 +469,7 @@ mod tests {
             r#if: None,
             plugin: "builtin-shell".to_string(),
             params: params_task3.clone(),
+            r#loop: None,
             on_success: "task-4".to_string(),
             on_failure: "".to_string()
         };
@@ -423,6 +479,7 @@ mod tests {
             r#if: None,
             plugin: "builtin-shell".to_string(),
             params: params_task4.clone(),
+            r#loop: None,
             on_success: "".to_string(),
             on_failure: "".to_string()
         };
@@ -474,6 +531,7 @@ mod tests {
             r#if: None,
             plugin: "builtin-shell".to_string(),
             params: params_task1.clone(),
+            r#loop: None,
             on_success: "task-2".to_string(),
             on_failure: "task-3".to_string()
         };
@@ -483,6 +541,7 @@ mod tests {
             r#if: Some("false".to_string()),
             plugin: "builtin-shell".to_string(),
             params: params_task2.clone(),
+            r#loop: None,
             on_success: "task-4".to_string(),
             on_failure: "task-4".to_string()
         };
@@ -492,6 +551,7 @@ mod tests {
             r#if: None,
             plugin: "builtin-shell".to_string(),
             params: params_task3.clone(),
+            r#loop: None,
             on_success: "task-4".to_string(),
             on_failure: "".to_string()
         };
@@ -501,6 +561,7 @@ mod tests {
             r#if: None,
             plugin: "builtin-shell".to_string(),
             params: params_task4.clone(),
+            r#loop: None,
             on_success: "".to_string(),
             on_failure: "".to_string()
         };
@@ -619,6 +680,7 @@ mod tests {
             r#if: Some("false".to_string()),
             plugin: "builtin-shell".to_string(),
             params: params_task1.clone(),
+            r#loop: None,
             on_success: "task-2".to_string(),
             on_failure: "task-3".to_string()
         };
@@ -628,6 +690,7 @@ mod tests {
             r#if: None,
             plugin: "builtin-shell".to_string(),
             params: params_task2.clone(),
+            r#loop: None,
             on_success: "task-4".to_string(),
             on_failure: "task-4".to_string()
         };
@@ -637,6 +700,7 @@ mod tests {
             r#if: None,
             plugin: "builtin-shell".to_string(),
             params: params_task3.clone(),
+            r#loop: None,
             on_success: "task-4".to_string(),
             on_failure: "".to_string()
         };
@@ -646,6 +710,7 @@ mod tests {
             r#if: None,
             plugin: "builtin-shell".to_string(),
             params: params_task4.clone(),
+            r#loop: None,
             on_success: "".to_string(),
             on_failure: "".to_string()
         };
@@ -696,15 +761,15 @@ mod tests {
         env_logger::init();
 
         let vars = json!({
-            "var1": "$VAR1",
+            "var1": "${VAR1}",
             "var2": [
                 "1",
-                "$VAR21",
+                "${VAR21}",
                 "3",
             ],
             "var3": [
                 "var31",
-                "$VAR32",
+                "${VAR32}",
                 "var33",
             ],
             "var4": {
@@ -713,8 +778,11 @@ mod tests {
                     "var412": "${VAR412}"
                 },
                 "var42": "var42",
-                "var43": "$VAR43"
-            }
+                "var43": "${VAR43}"
+            },
+            "superloop": [
+                "${LOOP1}", "${LOOP2}"
+            ]
         });
 
         envmnt::set("VAR1", "var1");
@@ -722,21 +790,24 @@ mod tests {
         envmnt::set("VAR32", "var32");
         envmnt::set("VAR412", "var412");
         envmnt::set("VAR43", "var43");
+        envmnt::set("LOOP1", "loop1");
+        envmnt::set("LOOP2", "loop2");
 
         let mut job = Job::default();
         job.name = "job-1".to_string();
         job.hosts = "localhost".to_string();
 
         let mut params_task1 = Map::new();
-        params_task1.insert("param1".to_string(), jsonValue::String("$VAR1 {{ context.variables.var1 }}".to_string()));
-        params_task1.insert("param2".to_string(), jsonValue::Array(vec![Value::String("$VAR21".to_string()), Value::String("{{ context.variables.var2.1 }}".to_string()), Value::String("3".to_string())]));
-        params_task1.insert("param3".to_string(), jsonValue::String("$VAR412 {{ context.variables.var4.var41.var412 }}".to_string()));
+        params_task1.insert("param1".to_string(), jsonValue::String("${VAR1} {{ context.variables.var1 }}".to_string()));
+        params_task1.insert("param2".to_string(), jsonValue::Array(vec![Value::String("${VAR21}".to_string()), Value::String("{{ context.variables.var2.1 }}".to_string()), Value::String("3".to_string())]));
+        params_task1.insert("param3".to_string(), jsonValue::String("${VAR412} {{ context.variables.var4.var41.var412 }}".to_string()));
 
         let mut task1 = Task {
             name: "task-1".to_string(),
             r#if: None,
             plugin: "builtin-shell".to_string(),
             params: params_task1.clone(),
+            r#loop: None,
             on_success: "task-2".to_string(),
             on_failure: "task-3".to_string()
         };
@@ -744,23 +815,38 @@ mod tests {
         job.tasks = vec![task1.clone()];
         job.context.insert("variables".to_string(), vars);
 
-        job.render_task_template(&mut task1).unwrap();
+        let mut vec_params = job.render_task_template(&mut task1).unwrap();
 
         // Expected result
-        let mut params_expected = Map::new();
-        params_expected.insert("param1".to_string(), jsonValue::String("var1 var1".to_string()));
-        params_expected.insert("param2".to_string(), jsonValue::Array(vec![Value::String("2".to_string()), Value::String("2".to_string()), Value::String("3".to_string())]));
-        params_expected.insert("param3".to_string(), jsonValue::String("var412 var412".to_string()));
+        let mut params_expected_1 = Map::new();
+        params_expected_1.insert("param1".to_string(), jsonValue::String("var1 var1".to_string()));
+        params_expected_1.insert("param2".to_string(), jsonValue::Array(vec![Value::String("2".to_string()), Value::String("2".to_string()), Value::String("3".to_string())]));
+        params_expected_1.insert("param3".to_string(), jsonValue::String("var412 var412".to_string()));
 
-        let expected = Task {
-            name: "task-1".to_string(),
-            r#if: None,
-            plugin: "builtin-shell".to_string(),
-            params: params_expected.clone(),
-            on_success: "task-2".to_string(),
-            on_failure: "task-3".to_string()
-        };
+        assert_eq!(vec![params_expected_1.clone()], vec_params);
 
-        assert_eq!(expected, task1);
+        // Loop
+        params_task1.insert("loop".to_string(), jsonValue::String("{{ loop_item }}".to_string()));
+
+        task1.params = params_task1.clone();
+
+        // Loop by a manual array
+        task1.r#loop = Some(jsonValue::Array(vec![jsonValue::String("loop1".to_string()), jsonValue::String("loop2".to_string())]));
+
+        vec_params = job.render_task_template(&mut task1).unwrap();
+
+        // Expected result
+        params_expected_1.insert("loop".to_string(), jsonValue::String("loop1".to_string()));
+
+        let mut params_expected_2 = params_expected_1.clone();
+        params_expected_2.insert("loop".to_string(), jsonValue::String("loop2".to_string()));
+
+        assert_eq!(vec![params_expected_1.clone(), params_expected_2.clone()], vec_params);
+
+        // Loop by rendering a variable array
+        task1.r#loop = Some(jsonValue::String("{{ context.variables.superloop | json_encode() | safe }}".to_string()));
+        vec_params = job.render_task_template(&mut task1).unwrap();
+
+        assert_eq!(vec![params_expected_1.clone(), params_expected_2.clone()], vec_params);
     }
 }
