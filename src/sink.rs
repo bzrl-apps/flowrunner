@@ -66,7 +66,10 @@ impl Sink {
                             },
                        }
 
-                        self.exec_plugin().await?;
+                        if let Err(e) = self.exec_plugin().await {
+                            error!("{e}");
+                            continue;
+                        }
                     },
                     Err(e) => { error!("{}", e.to_string()); break; },
                 }
@@ -81,7 +84,7 @@ impl Sink {
     async fn exec_plugin(&self) -> Result<()> {
         let mut s = self.clone();
 
-        if !self.render_sink_template(&mut s)? {
+        if !self.render_template(&mut s)? {
             return Ok(());
         }
 
@@ -105,7 +108,7 @@ impl Sink {
         Ok(())
     }
 
-    fn render_sink_template(&self, sink: &mut Sink) -> Result<bool> {
+    fn render_template(&self, sink: &mut Sink) -> Result<bool> {
         let mut data: Map<String, Value> = Map::new();
         let component = sink.name.as_str();
 

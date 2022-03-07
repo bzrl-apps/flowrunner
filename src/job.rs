@@ -114,10 +114,16 @@ impl Job {
 
                         // Run certain tasks given in parameter
                         if ts != "" {
-                            self.run_task_by_task(ts, datastore.clone()).await?;
+                            if let Err(e) = self.run_task_by_task(ts, datastore.clone()).await {
+                                error!("{e}");
+                                continue;
+                            }
                         } else {
                             // Run complete taskflow by running the first task
-                            self.run_all_tasks(self.start.clone(), datastore.clone()).await?;
+                            if let Err(e) = self.run_all_tasks(self.start.clone(), datastore.clone()).await {
+                                error!("{e}");
+                                continue;
+                            }
                         }
 
                         for rx1 in self.rx.iter() {
