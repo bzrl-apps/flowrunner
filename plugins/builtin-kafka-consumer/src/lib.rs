@@ -1,6 +1,7 @@
 extern crate flowrunner;
 use flowrunner::plugin::{Plugin, PluginExecResult, Status};
 use flowrunner::message::Message as FlowMessage;
+use flowrunner::return_plugin_exec_result_err;
 use flowrunner::datastore::store::BoxStore;
 
 extern crate json_ops;
@@ -14,7 +15,7 @@ use serde_json::Map;
 use anyhow::{anyhow, Result};
 
 //use tokio::sync::*;
-use async_channel::{Sender, Receiver, bounded};
+use async_channel::{Sender, Receiver};
 use tokio::runtime::Runtime;
 use async_trait::async_trait;
 
@@ -96,16 +97,19 @@ impl Plugin for KafkaConsumer {
 
     fn validate_params(&mut self, params: Map<String, Value>) -> Result<()> {
         let jops_params = JsonOps::new(Value::Object(params));
+        let mut default = KafkaConsumer::default();
 
         match jops_params.get_value_e::<Vec<String>>("brokers") {
-            Ok(b) => self.brokers = b,
+            Ok(b) => default.brokers = b,
             Err(e) => { return Err(anyhow!(e)); },
         };
 
         match jops_params.get_value_e::<Config>("consumer") {
-            Ok(c) => self.config = c,
+            Ok(c) => default.config = c,
             Err(e) => { return Err(anyhow!(e)); },
         };
+
+        *self = default;
 
         Ok(())
     }
@@ -115,26 +119,10 @@ impl Plugin for KafkaConsumer {
     async fn func(&self, sender: Option<String>, rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
        let _ =  env_logger::try_init();
 
-        let mut result = PluginExecResult::default();
-
         let rt = Runtime::new().unwrap();
         let _guard = rt.enter();
 
-        let brokers_cloned = self.brokers.clone();
-        let config_cloned = self.config.clone();
-        let rx_cloned = rx.clone();
-        let sender_cloned = sender.clone();
-        match tokio::spawn(async move {
-            return run(sender_cloned, brokers_cloned, config_cloned, &rx_cloned).await;
-        }).await {
-            Ok(r) => r,
-            Err(e) => {
-                result.status = Status::Ko;
-                result.error = e.to_string();
-
-                return result;
-            }
-        }
+        run(sender, self.brokers.clone(), self.config.clone(), &rx).await
     }
 }
 
@@ -259,6 +247,7 @@ mod tests {
         //message::{Headers, Message},
         producer::future_producer::{FutureProducer, FutureRecord},
     };
+    use async_channel::bounded;
 
     //use std::time::Duration;
     use tokio::time::{sleep, Duration};
