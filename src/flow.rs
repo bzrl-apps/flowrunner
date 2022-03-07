@@ -124,13 +124,15 @@ impl Flow {
                     let (rx_src_job, tx_src_job) = bounded::<FlowMessage>(1024);
                     job.tx.push(tx_src_job);
 
-                    // Report global flow settings in job context
+                    // Report global flow settings in context
                     job.context.insert("variables".to_string(), jsonValue::from(self.variables.clone()));
 
                     self.jobs[i] = job;
 
                     let srcs = self.sources.clone();
                     for (j, mut src) in srcs.into_iter().enumerate() {
+                        // Report global flow settings in context
+                        src.context.insert("variables".to_string(), jsonValue::from(self.variables.clone()));
                         src.rx.push(rx_src_job.clone());
                         self.sources[j] = src;
                     }
@@ -142,7 +144,7 @@ impl Flow {
                     let (rx_job_sink, tx_job_sink) = bounded::<FlowMessage>(1024);
                     sink.tx.push(tx_job_sink);
 
-                    // Report global flow settings in job context
+                    // Report global flow settings in context
                     sink.context.insert("variables".to_string(), jsonValue::from(self.variables.clone()));
 
                     self.sinks[i] = sink;
