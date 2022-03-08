@@ -12,7 +12,8 @@ set -x
 
 VERSION="${VERSION:-"latest"}"
 DATE="${DATE:-"$(date -u +%Y-%m-%d)"}"
-PLATFORM="${PLATFORM:-}"
+# PLATFORM for Buildx: linux/arm64 or linux/amd64
+PLATFORM="${PLATFORM:-"linux/amd64 linux/arm64"}"
 PUSH="${PUSH:-"true"}"
 REPO="${REPO:-"uthng/flowrunner"}"
 DIR_ARTIFACTS="target/artifacts"

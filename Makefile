@@ -61,7 +61,7 @@ deps:
 archive-%: export RELEASE_VERSION ?= latest
 archive-%: export TRIPLE ?= $($(strip @):archive-%=%)
 archive-%: export WORD1 ?= $(word 1,$(subst -, , $(TRIPLE)))
-archive-%: export ARCH = $(if $(findstring x86_64,$(WORD1)),amd64,$(WORD1))
+archive-%: export ARCH = $(if $(findstring x86_64,$(WORD1)),amd64,$(if $(findstring aarch64,$(WORD1)),arm64,$(WORD1)))
 archive-%: export OS ?= $(word 3,$(subst -, ,$(TRIPLE)))
 archive-%: export TARGET_DIR ?= target/$(TRIPLE)/release
 archive-%:
