@@ -34,11 +34,22 @@ struct KafkaProducer {
     options: Map<String, Value>,
     messages: Vec<KafkaMessage>,
     #[serde(default = "default_loglevel")]
-    log_level: String
+    log_level: String,
+    auth_mode: Option<String>,
+    ssl: Option<SSL>,
 }
 
 fn default_loglevel() -> String {
     "info".to_string()
+}
+
+#[derive(Default, Debug ,Serialize, Deserialize, Clone)]
+struct SSL {
+    ca_path: String,
+    cert_path: String,
+    key_path: String,
+    key_pass: Option<String>
+
 }
 
 #[derive(Default, Debug ,Serialize, Deserialize, Clone)]

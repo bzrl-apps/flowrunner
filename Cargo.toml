@@ -84,7 +84,7 @@ tera = "1"
 envmnt = "0.9"
 
 # Kafka
-rdkafka = { version = "0.28", features = ["default"] }
+rdkafka = { version = "0.28", features = ["default", "cmake-build", "ssl"] }
 
 # Postgres
 sqlx = { version = "0.5.1", features = [ "postgres", "runtime-tokio-rustls", "tls", "all-types" ] }

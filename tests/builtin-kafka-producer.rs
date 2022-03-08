@@ -48,6 +48,10 @@ sources:
         enable.auto.commit: true
         auto.commit.interval.ms: 1000
         enable.auto.offset.store: false
+        security.protocol: ssl
+        ssl.key.location:
+        ssl.certificate.location:
+        ssl.ca.location:
 
 jobs:
 - hosts: localhost
@@ -62,6 +66,11 @@ sinks:
   params:
     brokers:
     - localhost:9092
+    auth_mode: ssl
+    ssl:
+        ca_path:
+        cert_path:
+        key_path:
     options:
       message.timeout.ms: 5000
     messages:
