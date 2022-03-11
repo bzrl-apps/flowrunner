@@ -1,4 +1,4 @@
-use log::{info, error, debug};
+use log::*;
 use std::fs::File;
 
 use serde::{Deserialize, Serialize};
@@ -37,7 +37,7 @@ impl Default for Kind {
 
 //use crate::inventory::Inventory;
 
-#[derive(Default, Debug ,Serialize, Deserialize, PartialEq)]
+#[derive(Default, Debug ,Serialize, Deserialize, Clone, PartialEq)]
 pub struct Flow {
     #[serde(default)]
     pub name: String,
@@ -196,16 +196,20 @@ impl Flow {
         let kind_cloned = self.kind.clone();
         let datastore_cloned = self.datastore.clone();
         tokio::spawn(async move {
-            if let Ok(jobs) = run_all_jobs(kind_cloned, jobs_cloned, datastore_cloned).await {
-                if let Err(_) = tx.send(jobs) {
-                    error!("Sending jobs result: receiver dropped");
-                }
+            info!("Run all jobs...");
+            match run_all_jobs(kind_cloned, jobs_cloned, datastore_cloned).await {
+                Ok(jobs) => {
+                    if let Err(_) = tx.send(jobs) {
+                        error!("Sending jobs result: receiver dropped");
+                    }
+                },
+                Err(e) => error!("{e}"),
             }
         });
 
         match rx.await {
             Ok(v) => self.jobs = v,
-            Err(_) => error!("Receving jobs result: sender dropped"),
+            Err(e) => error!("Receving jobs result: sender dropped: {}", e),
         }
     }
 
