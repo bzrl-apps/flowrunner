@@ -126,7 +126,7 @@ impl Plugin for Webhook {
             Err(e) => { error!("{}", e); return_plugin_exec_result_err!(result, e.to_string()); },
         };
 
-        debug!("Listening on {}", addr);
+        info!("Listening on {}", addr);
         if let Err(e) = axum::Server::bind(&SocketAddr::V4(addr))
             .serve(app.into_make_service())
             .await {
