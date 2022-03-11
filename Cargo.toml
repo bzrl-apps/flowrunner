@@ -105,3 +105,8 @@ openssl = { version = "0.10", features = ["vendored"] }
 
 # sys-info
 sys-info = "0.9"
+
+# Axum
+axum = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version="0.3", features = ["env-filter"] }

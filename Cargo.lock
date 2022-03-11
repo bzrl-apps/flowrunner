@@ -853,11 +853,12 @@ dependencies = [
 
 [[package]]
 name = "flowrunner"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-channel",
  "async-trait",
+ "axum",
  "bindgen",
  "chrono",
  "clap",
@@ -881,6 +882,8 @@ dependencies = [
  "sys-info",
  "tera",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

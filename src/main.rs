@@ -21,6 +21,7 @@ mod sink;
 mod message;
 mod utils;
 mod datastore;
+mod server;
 
 #[tokio::main]
 async fn main() {
@@ -56,6 +57,14 @@ async fn main() {
                                     .short("f")
                                     .takes_value(true)
                                     .help("Name of the flow file to execute")))
+                        .subcommand(
+                            App::new("server")
+                                .about("Launch a flow server that only take classic flows")
+                                .arg(Arg::with_name("host-addr")
+                                    .default_value("127.0.0.1:3000")
+                                    .long("--host-addr")
+                                    .takes_value(true)
+                                    .help("IP address & port")))
                         .get_matches();
 
     env_logger::init();
@@ -85,6 +94,12 @@ async fn main() {
     match matches.subcommand() {
         ("exec", Some(exec_matches)) => {
             match exec::exec_cmd(&config, exec_matches).await {
+                Ok(()) => (),
+                Err(e) => { error!("{}", e.to_string()); },
+            }
+        },
+        ("server", Some(server_matches)) => {
+            match server::server_run(&config, server_matches).await {
                 Ok(()) => (),
                 Err(e) => { error!("{}", e.to_string()); },
             }
