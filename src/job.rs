@@ -169,6 +169,8 @@ impl Job {
         while let Some(mut t) = next_task.to_owned() {
             info!("Task executed: name {}, params {:?}", t.name, t.params);
 
+            let mut task_result = PluginStatus::Ok;
+
             // If task condition is not satisfied, then move to next task as when the task is
             // correctly executed
             let vec_params = self.render_task_template(&mut t)?;
@@ -207,6 +209,7 @@ impl Job {
                                 _ => self.get_task_by_name(t.on_failure.as_str()),
                             };
 
+                            task_result = PluginStatus::Ko;
                             break;
                         }
                     }
@@ -221,10 +224,12 @@ impl Job {
             };
 
              // Move to next task on success when PluginStatus::Ok or no plugin found
-            next_task = match t.on_success.len() {
-                n if n > 0 => self.get_task_by_name(t.on_success.as_str()),
-                _ => None,
-            };
+            if task_result == PluginStatus::Ok {
+                next_task = match t.on_success.len() {
+                    n if n > 0 => self.get_task_by_name(t.on_success.as_str()),
+                    _ => None,
+                };
+            }
         }
 
         Ok(())

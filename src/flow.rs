@@ -1046,7 +1046,7 @@ sinks:
         let expected = Flow {
             name: "flow1".to_string(),
             variables,
-            user_payload: Value::Null,
+            user_payload: jsonValue::Null,
             kind: Kind::Action,
             datastore: Some(datastore),
             sources,
