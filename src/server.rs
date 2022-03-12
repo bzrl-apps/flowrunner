@@ -1,7 +1,6 @@
 use clap::ArgMatches;
 
 use anyhow::{anyhow, Result};
-use futures::AsyncReadExt;
 use tokio::signal;
 use log::*;
 
@@ -9,6 +8,8 @@ use std::fs;
 use std::collections::HashMap;
 use std::net::{SocketAddr, SocketAddrV4};
 use std::sync::{Arc, RwLock};
+
+use serde_json::Value;
 
 use axum::Router;
 use axum::routing::*;
@@ -62,25 +63,36 @@ pub async fn server_run(config: &Config, matches: &ArgMatches<'_>) -> Result<()>
     // `axum::Server` is a re-export of `hyper::Server`
     let addr = host_addr.parse::<SocketAddrV4>().map_err(|e| { error!("{e}"); e })?;
 
-    info!("Listening on {:?}", addr);
-    if let Err(e) = axum::Server::bind(&SocketAddr::V4(addr))
-        .serve(app.into_make_service())
-        .await {
-        error!("{e}");
-    }
+    tokio::spawn(async move {
+        info!("Listening on {:?}", addr);
+        if let Err(e) = axum::Server::bind(&SocketAddr::V4(addr))
+            .serve(app.into_make_service())
+            .await {
+            error!("{e}");
+        }
+    });
 
-    Ok(())
+    match signal::ctrl_c().await {
+        Ok(()) => return Ok(()),
+        Err(e) => {
+            error!("Unable to listen for shutdown signal: {}", e);
+            // we also shut down in case of error
+            return Err(anyhow!(e));
+        },
+    };
 }
 
 async fn handler(
     // this argument tells axum to parse the request body
     // as JSON into a `CreateUser` type
     Path(flow): Path<String>,
+    Json(payload): Json<Value>,
     Extension(state): Extension<SharedState>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
 
     let mut flows = state.write().unwrap().flows.clone();
     if let Some(f) = flows.get_mut(&flow) {
+        f.user_payload = payload.clone();
         if let Err(e) = f.run().await {
             return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("{{\"error\": {}}}", e)));
         }

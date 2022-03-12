@@ -43,6 +43,8 @@ pub struct Flow {
     pub name: String,
     #[serde(default)]
     pub variables:  Map<String, jsonValue>,
+    #[serde(default)]
+    pub user_payload:  jsonValue,
 
     #[serde(default)]
     pub kind: Kind,
@@ -126,6 +128,7 @@ impl Flow {
 
                     // Report global flow settings in context
                     job.context.insert("variables".to_string(), jsonValue::from(self.variables.clone()));
+                    job.context.insert("user_payload".to_string(), self.user_payload.clone());
 
                     self.jobs[i] = job;
 
@@ -133,6 +136,7 @@ impl Flow {
                     for (j, mut src) in srcs.into_iter().enumerate() {
                         // Report global flow settings in context
                         src.context.insert("variables".to_string(), jsonValue::from(self.variables.clone()));
+                        src.context.insert("user_payload".to_string(), self.user_payload.clone());
                         src.rx.push(rx_src_job.clone());
                         self.sources[j] = src;
                     }
@@ -146,6 +150,7 @@ impl Flow {
 
                     // Report global flow settings in context
                     sink.context.insert("variables".to_string(), jsonValue::from(self.variables.clone()));
+                    sink.context.insert("user_payload".to_string(), self.user_payload.clone());
 
                     self.sinks[i] = sink;
 
@@ -167,6 +172,7 @@ impl Flow {
                 for (i, mut job) in jobs.into_iter().enumerate() {
                     // Report global flow settings in job context
                     job.context.insert("variables".to_string(), jsonValue::from(self.variables.clone()));
+                    job.context.insert("user_payload".to_string(), self.user_payload.clone());
 
                     self.jobs[i] = job;
                 }
@@ -875,6 +881,7 @@ sinks:
             name: "kafka1".to_string(),
             plugin: "kafka".to_string(),
             params: params_src1,
+            context: Map::new(),
             rx: vec![],
             tx: vec![],
         });
@@ -883,10 +890,10 @@ sinks:
             name: "src-2".to_string(),
             plugin: "kafka".to_string(),
             params: params_src2,
+            context: Map::new(),
             rx: vec![],
             tx: vec![],
         });
-
 
         let params_sink1 = json_map!(
             "conn_str" => jsonValue::String("postgres://localhost:5432/flowrunner".to_string()),
@@ -1039,6 +1046,7 @@ sinks:
         let expected = Flow {
             name: "flow1".to_string(),
             variables,
+            user_payload: Value::Null,
             kind: Kind::Action,
             datastore: Some(datastore),
             sources,
