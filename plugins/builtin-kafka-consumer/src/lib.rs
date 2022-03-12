@@ -1,7 +1,6 @@
 extern crate flowrunner;
 use flowrunner::plugin::{Plugin, PluginExecResult, Status};
 use flowrunner::message::Message as FlowMessage;
-use flowrunner::return_plugin_exec_result_err;
 use flowrunner::datastore::store::BoxStore;
 
 extern crate json_ops;
@@ -241,6 +240,8 @@ pub fn get_plugin() -> *mut (dyn Plugin + Send + Sync) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flowrunner::test::utils::*;
+
     use json_ops::json_map;
     use rdkafka::{
         config::ClientConfig,
@@ -251,21 +252,21 @@ mod tests {
 
     //use std::time::Duration;
     use tokio::time::{sleep, Duration};
+    use serde_json::json;
 
     //#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     #[tokio::test]
     async fn test_func() {
-        //env_logger::init();
+        let _ = env_logger::try_init();
+        init_kafka(&["topic1"]).await;
+
         let mut consumer = KafkaConsumer::default();
 
         let (rx, tx) = bounded::<FlowMessage>(1024);
         let rxs = vec![rx.clone()];
         let txs = vec![tx.clone()];
 
-        let producer: FutureProducer = ClientConfig::new()
-            .set("bootstrap.servers", "localhost:9092")
-            .set("message.timeout.ms", "5000")
-            .create().unwrap();
+        let producer = create_producer_client("localhost:9092");
 
         let msg_bytes = r#"{"message": "hello world"}"#.as_bytes();
         let key_bytes = r#"key1"#.as_bytes();

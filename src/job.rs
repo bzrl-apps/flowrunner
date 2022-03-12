@@ -436,7 +436,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_tasks() {
-        env_logger::init();
+        let _ =  env_logger::try_init();
         PluginRegistry::load_plugins("target/debug").await;
 
         let mut job = Job::default();
@@ -518,7 +518,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_all_tasks() {
-        env_logger::init();
+        let _ =  env_logger::try_init();
         PluginRegistry::load_plugins("target/debug").await;
 
         let mut job = Job::default();
@@ -667,7 +667,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_task_by_task() {
-        env_logger::init();
+        let _ =  env_logger::try_init();
         PluginRegistry::load_plugins("target/debug").await;
 
         let mut job = Job::default();
@@ -769,7 +769,7 @@ mod tests {
 
     #[test]
     fn test_render_task_template() {
-        env_logger::init();
+        let _ =  env_logger::try_init();
 
         let vars = json!({
             "var1": "${VAR1}",

@@ -17,6 +17,8 @@ use async_channel::{Sender, Receiver};
 
 use std::process::Command;
 
+use log::*;
+
 // Our plugin implementation
 #[derive(Debug, Default, Clone)]
 struct Shell {
@@ -62,6 +64,8 @@ impl Plugin for Shell {
     fn set_datastore(&mut self, _datastore: Option<BoxStore>) {}
 
     async fn func(&self, _sender: Option<String>, _rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
+        let _ =  env_logger::try_init();
+
         //let mut result: Map<String, Value> = Map::new();
         let mut result = PluginExecResult::default();
 
@@ -104,7 +108,7 @@ impl Plugin for Shell {
 
 #[no_mangle]
 pub fn get_plugin() -> *mut dyn Plugin {
-    println!("Plugin Shell loaded!");
+    debug!("Plugin Shell loaded!");
 
     // Return a raw pointer to an instance of our plugin
     Box::into_raw(Box::new(Shell::default()))
@@ -142,9 +146,9 @@ mod tests {
         params.insert("cmd".to_string(), Value::String("ls -z".to_string()));
 
         expected.status = Status::Ko;
-        expected.error= "ls: illegal option -- z\nusage: ls [-@ABCFGHLOPRSTUWabcdefghiklmnopqrstuwx1%] [file ...]\n".to_string();
+        expected.error= "ls: invalid option -- z\nusage: ls [-@ABCFGHILOPRSTUWabcdefghiklmnopqrstuvwxy1%,] [--color=when] [-D format] [file ...]\n".to_string();
         expected.output.insert("rc".to_string(), Value::Number(Number::from(1)));
-        expected.output.insert("stderr".to_string(), Value::String("ls: illegal option -- z\nusage: ls [-@ABCFGHLOPRSTUWabcdefghiklmnopqrstuwx1%] [file ...]\n".to_string()));
+        expected.output.insert("stderr".to_string(), Value::String("ls: invalid option -- z\nusage: ls [-@ABCFGHILOPRSTUWabcdefghiklmnopqrstuvwxy1%,] [--color=when] [-D format] [file ...]\n".to_string()));
 
         shell.validate_params(params.clone()).unwrap();
         result = shell.func(None, &txs_empty, &rxs_empty).await;

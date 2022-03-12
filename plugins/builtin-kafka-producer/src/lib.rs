@@ -20,7 +20,7 @@ use async_channel::{Sender, Receiver};
 use tokio::runtime::Runtime;
 use async_trait::async_trait;
 
-use log::{info, error, debug};
+use log::*;
 
 use rdkafka::{
     config::{ClientConfig, RDKafkaLogLevel},
@@ -35,21 +35,10 @@ struct KafkaProducer {
     messages: Vec<KafkaMessage>,
     #[serde(default = "default_loglevel")]
     log_level: String,
-    auth_mode: Option<String>,
-    ssl: Option<SSL>,
 }
 
 fn default_loglevel() -> String {
     "info".to_string()
-}
-
-#[derive(Default, Debug ,Serialize, Deserialize, Clone)]
-struct SSL {
-    ca_path: String,
-    cert_path: String,
-    key_path: String,
-    key_pass: Option<String>
-
 }
 
 #[derive(Default, Debug ,Serialize, Deserialize, Clone)]
@@ -82,6 +71,7 @@ impl Plugin for KafkaProducer {
     fn validate_params(&mut self, params: Map<String, Value>) -> Result<()> {
         let jops_params = JsonOps::new(Value::Object(params));
 
+        warn!("kafka client: {:#?}", self);
         match jops_params.get_value_e::<Vec<String>>("brokers") {
             Ok(b) => self.brokers = b,
             Err(e) => { return Err(anyhow!(e)); },
@@ -92,6 +82,7 @@ impl Plugin for KafkaProducer {
             Err(_) => self.options = Map::new(),
         };
 
+        warn!("kafka client: {:#?}", self);
         match jops_params.get_value_e::<Vec<KafkaMessage>>("messages") {
             Ok(m) => {
                 for m in m.iter() {
@@ -110,6 +101,7 @@ impl Plugin for KafkaProducer {
             Err(_) => self.log_level = "info".to_string(),
         };
 
+        warn!("kafka client: {:#?}", self);
         Ok(())
     }
 

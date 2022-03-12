@@ -8,20 +8,31 @@ use rdkafka::producer::future_producer::FutureRecord;
 use flowrunner::plugin::{PluginRegistry, PluginExecResult, Status};
 use flowrunner::flow::Flow;
 use flowrunner::plugin_exec_result;
+use flowrunner::test::utils::*;
 
 use json_ops::json_map;
 
 use chrono::{DateTime, Utc};
 
-use crate::utils::*;
-mod utils;
-
 #[tokio::test]
 async fn test_sink_postgres() {
     //init_log();
-    env_logger::init();
-    init_kafka(&["topic1"]).await;
-    let pool = init_db().await;
+    let _ = env_logger::try_init();
+    init_kafka(&["pg_topic1"]).await;
+    let pool = init_db(&["pg_users1"]).await;
+
+    sqlx::query(r#"
+CREATE TABLE IF NOT EXISTS pg_users1 (
+id serial PRIMARY KEY,
+username VARCHAR ( 50 ) UNIQUE NOT NULL,
+password character varying(64)NOT NULL,
+enabled boolean,
+age integer,
+created_at timestamp with time zone DEFAULT now()
+);"#)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let content = r#"
 name: flow1
@@ -36,7 +47,7 @@ sources:
     consumer:
       group_id: group1
       topics:
-      - topic1
+      - pg_topic1
       offset: earliest
       options:
         enable.partition.eof: false
@@ -59,7 +70,7 @@ sinks:
     conn_str: "postgres://flowrunner:flowrunner@localhost:5432/flowrunner"
     max_conn: "5"
     stmts:
-    - stmt: "INSERT INTO users(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5);"
+    - stmt: "INSERT INTO pg_users1(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5);"
       cond: "{{ context['data']['task-1']['output']['stdout']['username'] == 'test2' }}"
       params:
         - value: "{{ context['data']['task-1']['output']['stdout']['username'] }}"
@@ -90,7 +101,7 @@ sinks:
 
     for m in msgs.iter() {
         let produce_future = producer.send(
-            FutureRecord::to("topic1")
+            FutureRecord::to("pg_topic1")
                 .payload(m.as_bytes())
                 .key(key_bytes),
                 //.headers(OwnedHeaders::new().add("header_key", "header_value")),
@@ -110,7 +121,7 @@ sinks:
     sleep(Duration::from_millis(10000)).await;
 
     // Query directly to database to check results
-    let rows = sqlx::query(r#"SELECT * FROM users;"#)
+    let rows = sqlx::query(r#"SELECT * FROM pg_users1;"#)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -151,9 +162,22 @@ sinks:
 #[tokio::test]
 async fn test_job_postgres() {
     //init_log();
-    env_logger::init();
-    init_kafka(&["topic1"]).await;
-    let pool = init_db().await;
+    let _ = env_logger::try_init();
+    init_kafka(&["pg_topic2"]).await;
+    let pool = init_db(&["pg_users2"]).await;
+
+    sqlx::query(r#"
+CREATE TABLE IF NOT EXISTS pg_users2 (
+id serial PRIMARY KEY,
+username VARCHAR ( 50 ) UNIQUE NOT NULL,
+password character varying(64)NOT NULL,
+enabled boolean,
+age integer,
+created_at timestamp with time zone DEFAULT now()
+);"#)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let content = r#"
 name: flow1
@@ -168,7 +192,7 @@ sources:
     consumer:
       group_id: group1
       topics:
-      - topic1
+      - pg_topic2
       offset: earliest
       options:
         enable.partition.eof: false
@@ -186,7 +210,7 @@ jobs:
         conn_str: "postgres://flowrunner:flowrunner@localhost:5432/flowrunner"
         max_conn: "5"
         stmts:
-        - stmt: "INSERT INTO users(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5);"
+        - stmt: "INSERT INTO pg_users2(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5);"
           cond: "{{ context['data']['username'] == 'test2' }}"
           params:
           - value: "{{ context['data']['username'] }}"
@@ -217,7 +241,7 @@ jobs:
 
     for m in msgs.iter() {
         let produce_future = producer.send(
-            FutureRecord::to("topic1")
+            FutureRecord::to("pg_topic2")
                 .payload(m.as_bytes())
                 .key(key_bytes),
                 //.headers(OwnedHeaders::new().add("header_key", "header_value")),
@@ -237,7 +261,7 @@ jobs:
     sleep(Duration::from_millis(10000)).await;
 
     // Query directly to database to check results
-    let rows = sqlx::query(r#"SELECT * FROM users;"#)
+    let rows = sqlx::query(r#"SELECT * FROM pg_users2;"#)
         .fetch_all(&pool)
         .await
         .unwrap();

@@ -593,13 +593,13 @@ mod tests {
             .await
             .unwrap();
 
-        sqlx::query(r#"DROP TABLE IF EXISTS users;"#)
+        sqlx::query(r#"DROP TABLE IF EXISTS lib_users;"#)
             .execute(&pool)
             .await
             .unwrap();
 
         sqlx::query(r#"
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE IF NOT EXISTS lib_users (
     id serial PRIMARY KEY,
     username VARCHAR ( 50 ) UNIQUE NOT NULL,
     password character varying(64)NOT NULL,
@@ -614,13 +614,13 @@ CREATE TABLE IF NOT EXISTS users (
 
     #[test]
     fn test_sql_parser() {
-        let mut stmt = "INSERT INTO users(username, password) VALUES ($1, $2);";
+        let mut stmt = "INSERT INTO lib_users(username, password) VALUES ($1, $2);";
 
         let mut qry_type = sql_parser(stmt);
 
         assert_eq!("execute".to_string(), qry_type);
 
-        stmt = "INSERT INTO users(username, password) VALUES ($1, $2) returning id;";
+        stmt = "INSERT INTO lib_users(username, password) VALUES ($1, $2) returning id;";
         qry_type = sql_parser(stmt);
 
         assert_eq!("query".to_string(), qry_type);
@@ -631,17 +631,17 @@ CREATE TABLE IF NOT EXISTS users (
 
         assert_eq!("execute".to_string(), qry_type);
 
-        stmt = "UPDATE users SET password = $1 WHERE username = $2";
+        stmt = "UPDATE lib_users SET password = $1 WHERE username = $2";
         qry_type = sql_parser(stmt);
 
         assert_eq!("execute".to_string(), qry_type);
 
-        stmt = "UPDATE users SET password = $1 WHERE username = $2 returning username";
+        stmt = "UPDATE lib_users SET password = $1 WHERE username = $2 returning username";
         qry_type = sql_parser(stmt);
 
         assert_eq!("query".to_string(), qry_type);
 
-        stmt = "select * from users;";
+        stmt = "select * from lib_users;";
         qry_type = sql_parser(stmt);
 
         assert_eq!("query".to_string(), qry_type);
@@ -659,7 +659,7 @@ CREATE TABLE IF NOT EXISTS users (
             "max_conn": 5,
             "stmts": [
                 {
-                    "stmt": "INSERT INTO users(username, password, enabled, age) VALUES ($1, $2, $3, $4);",
+                    "stmt": "INSERT INTO lib_users(username, password, enabled, age) VALUES ($1, $2, $3, $4);",
                     "cond": "true",
                     "params": [
                         {"value": "test1", "pg_type": "varchar"},
@@ -670,7 +670,7 @@ CREATE TABLE IF NOT EXISTS users (
                     "fetch": ""
                 },
                 {
-                    "stmt": "INSERT INTO users (toto) VALUES ($1);",
+                    "stmt": "INSERT INTO lib_users (toto) VALUES ($1);",
                     "cond": "true",
                     "params": [
                         {"value": "test2", "pg_type": "varchar"}
@@ -700,7 +700,7 @@ CREATE TABLE IF NOT EXISTS users (
 
         let mut expected = plugin_exec_result!(
             Status::Ko,
-            "error returned from database: column \"toto\" of relation \"users\" does not exist",
+            "error returned from database: column \"toto\" of relation \"lib_users\" does not exist",
             "0" => Value::Number(Number::from(1))
         );
 
@@ -710,7 +710,7 @@ CREATE TABLE IF NOT EXISTS users (
 
         // Check rollback when an error occured
         let pool = PgPoolOptions::new().connect(&pg.conn_str).await.unwrap();
-        let res = sqlx::query("SELECT * FROM users;").fetch_all(&pool).await.unwrap();
+        let res = sqlx::query("SELECT * FROM lib_users;").fetch_all(&pool).await.unwrap();
 
         assert_eq!(0, res.len());
 
@@ -720,7 +720,7 @@ CREATE TABLE IF NOT EXISTS users (
             "max_conn": 5,
             "stmts": [
                 {
-                    "stmt": "INSERT INTO users(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5);",
+                    "stmt": "INSERT INTO lib_users(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5);",
                     "cond": "true",
                     "params": [
                         {"value": "test1", "pg_type": "varchar"},
@@ -732,7 +732,7 @@ CREATE TABLE IF NOT EXISTS users (
                     "fetch": ""
                 },
                 {
-                    "stmt": "INSERT INTO users(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5);",
+                    "stmt": "INSERT INTO lib_users(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5);",
                     "cond": "true",
                     "params": [
                         {"value": "test2", "pg_type": "varchar"},
@@ -744,7 +744,7 @@ CREATE TABLE IF NOT EXISTS users (
                     "fetch": ""
                 },
                 {
-                    "stmt": "INSERT INTO users(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (username) DO UPDATE SET enabled = EXCLUDED.enabled, age = EXCLUDED.age;",
+                    "stmt": "INSERT INTO lib_users(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (username) DO UPDATE SET enabled = EXCLUDED.enabled, age = EXCLUDED.age;",
                     "cond": "true",
                     "params": [
                         {"value": "test2", "pg_type": "varchar"},
@@ -756,7 +756,7 @@ CREATE TABLE IF NOT EXISTS users (
                     "fetch": ""
                 },
                 {
-                    "stmt": "INSERT INTO users(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5);",
+                    "stmt": "INSERT INTO lib_users(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5);",
                     "cond": "true",
                     "params": [
                         {"value": "test3", "pg_type": "varchar"},
@@ -768,13 +768,13 @@ CREATE TABLE IF NOT EXISTS users (
                     "fetch": ""
                 },
                 {
-                    "stmt": "SELECT * FROM users;",
+                    "stmt": "SELECT * FROM lib_users;",
                     "cond": "true",
                     "params": [],
                     "fetch": "all"
                 },
                 {
-                    "stmt": "UPDATE users SET created_at = $1::TIMESTAMP WHERE id = $2;",
+                    "stmt": "UPDATE lib_users SET created_at = $1::TIMESTAMP WHERE id = $2;",
                     "cond": "true",
                     "params": [
                         {"value": "2999-01-30 11:03:53 UTC", "pg_type": "timestamptz"},
@@ -783,7 +783,7 @@ CREATE TABLE IF NOT EXISTS users (
                     "fetch": ""
                 },
                 {
-                    "stmt": "DELETE FROM users WHERE id = $1;",
+                    "stmt": "DELETE FROM lib_users WHERE id = $1;",
                     "cond": "true",
                     "params": [
                         {"value": 3, "pg_type": "int"}
@@ -791,7 +791,7 @@ CREATE TABLE IF NOT EXISTS users (
                     "fetch": ""
                 },
                 {
-                    "stmt": "SELECT * FROM users;",
+                    "stmt": "SELECT * FROM lib_users;",
                     "cond": "true",
                     "params": [],
                     "fetch": "all"

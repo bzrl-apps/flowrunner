@@ -1,6 +1,3 @@
-use serde_json::{Value, Number, Map};
-
-use sqlx::Row;
 //use sqlx::types::chrono::DateTime;
 use tokio::time::{sleep, Duration};
 
@@ -8,24 +5,16 @@ use rdkafka::producer::future_producer::FutureRecord;
 use rdkafka::Message;
 use rdkafka::consumer::Consumer;
 
-use flowrunner::plugin::{PluginRegistry, PluginExecResult, Status};
+use flowrunner::plugin::PluginRegistry;
 use flowrunner::flow::Flow;
-use flowrunner::plugin_exec_result;
+use flowrunner::test::utils::*;
 
 use std::str;
 
-use json_ops::json_map;
-
-use chrono::{DateTime, Utc};
-
-use crate::utils::*;
-mod utils;
-
 #[tokio::test]
 async fn test_sink_kafka_producer() {
-    //init_log();
-    env_logger::init();
-    init_kafka(&["topic1", "topic2", "topic3"]).await;
+    let _ = env_logger::try_init();
+    init_kafka(&["prd_sink_topic1", "prd_sink_topic2", "prd_sink_topic3"]).await;
 
     let content = r#"
 name: flow1
@@ -40,7 +29,7 @@ sources:
     consumer:
       group_id: group1
       topics:
-      - topic1
+      - prd_sink_topic1
       offset: earliest
       options:
         enable.partition.eof: false
@@ -48,10 +37,6 @@ sources:
         enable.auto.commit: true
         auto.commit.interval.ms: 1000
         enable.auto.offset.store: false
-        security.protocol: ssl
-        ssl.key.location:
-        ssl.certificate.location:
-        ssl.ca.location:
 
 jobs:
 - hosts: localhost
@@ -66,18 +51,13 @@ sinks:
   params:
     brokers:
     - localhost:9092
-    auth_mode: ssl
-    ssl:
-        ca_path:
-        cert_path:
-        key_path:
     options:
       message.timeout.ms: 5000
     messages:
-    - topic: topic2
+    - topic: prd_sink_topic2
       message: "{{ context['data']['task-1']['output']['stdout']['username'] }}"
       key: "key2"
-    - topic: topic3
+    - topic: prd_sink_topic3
       message: "{{ context['data']['task-1']['output']['stdout']['password'] }}"
       key: "key3"
 "#;
@@ -96,7 +76,7 @@ sinks:
 
     for m in msgs.iter() {
         let produce_future = producer.send(
-            FutureRecord::to("topic1")
+            FutureRecord::to("prd_sink_topic1")
                 .payload(m.as_bytes())
                 .key(key_bytes),
                 //.headers(OwnedHeaders::new().add("header_key", "header_value")),
@@ -115,19 +95,19 @@ sinks:
 
     sleep(Duration::from_millis(10000)).await;
 
-    // Create a new consumer to consume topic2 & topic3
+    // Create a new consumer to consume prd_sink_topic2 & prd_sink_topic3
     let consumer_checker = create_consumer_client("localhost:9092", "consumer-checker");
-    consumer_checker.subscribe(&["topic2", "topic3"]).unwrap();
+    consumer_checker.subscribe(&["prd_sink_topic2", "prd_sink_topic3"]).unwrap();
     match consumer_checker.iter().next().unwrap() {
         Ok(message) => {
-            if message.topic() == "topic2" {
+            if message.topic() == "prd_sink_topic2" {
                 assert_eq!("key2", str::from_utf8(message.key().unwrap()).unwrap());
                 assert_eq!("test1", message.payload_view::<str>().unwrap().unwrap());
-            } else if message.topic() == "topic3" {
+            } else if message.topic() == "prd_sink_topic3" {
                 assert_eq!("key3", str::from_utf8(message.key().unwrap()).unwrap());
                 assert_eq!("pass1", message.payload_view::<str>().unwrap().unwrap());
             } else {
-                assert!(false, "topic is not either topic2 or topic 3");
+                assert!(false, "topic is not either prd_sink_topic2 or prd_sink_topic 3");
             }
         },
         Err(e) => panic!("Error receiving message: {:?}", e),
@@ -136,10 +116,9 @@ sinks:
 
 #[tokio::test]
 async fn test_job_kafka_producer() {
-    //init_log();
-    env_logger::init();
-    init_kafka(&["topic1"]).await;
-    let pool = init_db().await;
+    let _ = env_logger::try_init();
+
+    init_kafka(&["prd_job_topic1", "prd_job_topic2", "prd_job_topic3"]).await;
 
     let content = r#"
 name: flow1
@@ -154,7 +133,7 @@ sources:
     consumer:
       group_id: group1
       topics:
-      - topic1
+      - prd_job_topic1
       offset: earliest
       options:
         enable.partition.eof: false
@@ -174,10 +153,10 @@ jobs:
         options:
           message.timeout.ms: 5000
         messages:
-        - topic: topic2
+        - topic: prd_job_topic2
           message: "{{ context['data']['username'] }}"
           key: "key2"
-        - topic: topic3
+        - topic: prd_job_topic3
           message: "{{ context['data']['password'] }}"
           key: "key3"
 "#;
@@ -196,7 +175,7 @@ jobs:
 
     for m in msgs.iter() {
         let produce_future = producer.send(
-            FutureRecord::to("topic1")
+            FutureRecord::to("prd_job_topic1")
                 .payload(m.as_bytes())
                 .key(key_bytes),
                 //.headers(OwnedHeaders::new().add("header_key", "header_value")),
@@ -215,19 +194,19 @@ jobs:
 
     sleep(Duration::from_millis(10000)).await;
 
-    // Consumer messages in topic2 & topic3
+    // Consumer messages in prd_job_topic2 & prd_job_topic3
     let consumer_checker = create_consumer_client("localhost:9092", "consumer-checker");
-    consumer_checker.subscribe(&["topic2", "topic3"]).unwrap();
+    consumer_checker.subscribe(&["prd_job_topic2", "prd_job_topic3"]).unwrap();
     match consumer_checker.iter().next().unwrap() {
         Ok(message) => {
-            if message.topic() == "topic2" {
+            if message.topic() == "prd_job_topic2" {
                 assert_eq!("key2", str::from_utf8(message.key().unwrap()).unwrap());
                 assert_eq!("test1", message.payload_view::<str>().unwrap().unwrap());
-            } else if message.topic() == "topic3" {
+            } else if message.topic() == "prd_job_topic3" {
                 assert_eq!("key3", str::from_utf8(message.key().unwrap()).unwrap());
                 assert_eq!("pass1", message.payload_view::<str>().unwrap().unwrap());
             } else {
-                assert!(false, "topic is not either topic2 or topic 3");
+                assert!(false, "topic is not either prd_job_topic2 or prd_job_topic 3");
             }
         },
         Err(e) => panic!("Error receiving message: {:?}", e),

@@ -34,8 +34,8 @@ mod tests {
     fn test_read_config_file() {
         let expected: Config = Config{
             runner: RunnerConfig{
-                plugin_dir: "dist/plugins".to_string(),
-                flow_dir: "dist/workflows".to_string(),
+                plugin_dir: "plugins".to_string(),
+                flow_dir: "flows".to_string(),
                 job_parallel: true
             }
         };

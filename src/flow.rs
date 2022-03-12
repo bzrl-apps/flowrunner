@@ -1063,7 +1063,7 @@ sinks:
 
     #[tokio::test]
     async fn test_flow_run() {
-        env_logger::init();
+        let _ =  env_logger::try_init();
 
         let content = r#"
 name: flow1
@@ -1172,7 +1172,7 @@ jobs:
 
     #[tokio::test]
     async fn test_flow_srcs_jobs() {
-        env_logger::init();
+        let _ =  env_logger::try_init();
 
         let content = r#"
 name: flow1
@@ -1180,7 +1180,7 @@ name: flow1
 kind: stream
 sources:
   - name: kafka1
-    plugin: builtin_kafka_consumer
+    plugin: builtin-kafka-consumer
     params:
       brokers:
       - localhost:9092
@@ -1194,7 +1194,7 @@ sources:
 jobs:
   - hosts: localhost
     tasks:
-    - builtin_shell:
+    - builtin-shell:
         params:
           cmd: "echo {{ context.data.message }}"
 "#;

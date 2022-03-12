@@ -195,17 +195,19 @@ mod tests {
     #[tokio::test]
     //#[test]
     async fn test_load_plugins() {
-        env_logger::init();
+        let _ =  env_logger::try_init();
         PluginRegistry::load_plugins("target/debug").await;
 
 
         let mut params = Map::new();
         params.insert("cmd".to_string(), jsonValue::String("ls -la".to_string()));
 
-        let plugin = PluginRegistry::get_plugin("builtin-shell").unwrap();
-        let res = plugin.func(None, &vec![], &vec![]).await;
+        let mut plugin = PluginRegistry::get_plugin("builtin-shell").unwrap();
+        plugin.validate_params(params).unwrap();
 
-        println!("{:?}", res)
+        let _ = plugin.func(None, &vec![], &vec![]).await;
+
+        //println!("{:?}", res)
     }
 
     #[test]

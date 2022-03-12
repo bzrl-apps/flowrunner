@@ -11,7 +11,7 @@ use anyhow::{Result, anyhow};
 
 use evalexpr::*;
 
-use log::{info, debug, error};
+use log::*;
 
 use crate::plugin::{PluginRegistry, Status as PluginStatus};
 use crate::message::Message as FlowMessage;

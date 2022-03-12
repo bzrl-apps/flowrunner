@@ -133,7 +133,7 @@ impl Plugin for Uri {
     fn set_datastore(&mut self, _datastore: Option<BoxStore>) {}
 
     async fn func(&self, _sender: Option<String>, _rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
-        env_logger::init();
+        let _ =  env_logger::try_init();
 
         let mut result = PluginExecResult::default();
 
@@ -231,14 +231,10 @@ pub fn get_plugin() -> *mut (dyn Plugin + Send + Sync) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
-
-    //use std::time::Duration;
-    use tokio::time::{sleep, Duration};
 
     #[tokio::test]
     async fn test_func() {
-        let mut json = r#"{
+        let json = r#"{
             "url": "https://httpbin.org/post",
             "method": "POST",
             "headers": {
@@ -249,21 +245,15 @@ mod tests {
 
         let value: Value = serde_json::from_str(json).unwrap();
 
-        let mut params = value.as_object().unwrap().to_owned();
-
-        println!("{params:#?}");
+        let params = value.as_object().unwrap().to_owned();
 
         let mut uri = Uri::default();
 
         uri.validate_params(params.clone()).unwrap();
 
-        println!("URI: {uri:#?}");
-
         let txs = Vec::<Sender<FlowMessage>>::new();
         let rxs = Vec::<Receiver<FlowMessage>>::new();
 
         let result = uri.func(None, &txs, &rxs).await;
-
-        println!("{result:#?}");
     }
 }

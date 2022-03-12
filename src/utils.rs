@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn test_expand_env_map() {
-        env_logger::init();
+        let _ =  env_logger::try_init();
 
         let input = json!({
             "var1": "${VAR1}",
@@ -285,7 +285,7 @@ mod tests {
 
     #[test]
     fn test_render_loop_template() {
-        env_logger::init();
+        let _ =  env_logger::try_init();
 
         let input = json!({
             "var1": "${VAR1}",
