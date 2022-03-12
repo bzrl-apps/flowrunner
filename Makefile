@@ -58,6 +58,12 @@ deps:
 
 .PHONY: deps
 
+tests: docker-start
+	cargo test --workspace -- --show-output
+	make docker-stop
+
+.PHONY: tests
+
 archive-%: export RELEASE_VERSION ?= latest
 archive-%: export TRIPLE ?= $($(strip @):archive-%=%)
 archive-%: export WORD1 ?= $(word 1,$(subst -, , $(TRIPLE)))

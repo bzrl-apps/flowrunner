@@ -43,7 +43,7 @@ jobs:
         run: make deps
 
       - name: Launch unit tests
-        run: make cross-test
+        run: make tests
 
       - name: Restore Cache
         uses: actions/cache@v1
