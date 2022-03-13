@@ -83,8 +83,8 @@ async fn main() {
     info!("Plugin directory: {}", plugin_dir);
     info!("Flow directory: {}", flow_dir);
 
-    config.runner.plugin_dir = plugin_dir.clone().to_owned();
-    config.runner.flow_dir = flow_dir.clone().to_owned();
+    config.runner.plugin_dir = <&str>::clone(&plugin_dir).to_owned();
+    config.runner.flow_dir = <&str>::clone(&flow_dir).to_owned();
 
     info!("--- Final configuration ---");
     info!("{:?}", config);

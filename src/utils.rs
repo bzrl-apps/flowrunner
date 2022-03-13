@@ -13,15 +13,15 @@ pub fn convert_value_yaml_to_json(v: &yamlValue) -> Result<jsonValue> {
     let mut val = jsonValue::Null;
 
     if v.is_bool() {
-        val = jsonValue::Bool(v.as_bool().ok_or(anyhow!("cannot convert to bool"))?);
+        val = jsonValue::Bool(v.as_bool().ok_or_else(|| anyhow!("cannot convert to bool"))?);
     } else if v.is_f64() {
-        val = jsonValue::Number(Number::from_f64(v.as_f64().ok_or(anyhow!("cannot convert to f64"))?).ok_or(anyhow!("cannot convert from f64"))?);
+        val = jsonValue::Number(Number::from_f64(v.as_f64().ok_or_else(|| anyhow!("cannot convert to f64"))?).ok_or_else(|| anyhow!("cannot convert from f64"))?);
     } else if v.is_u64() {
-        val = jsonValue::Number(Number::from(v.as_u64().ok_or(anyhow!("cannot convert to u64"))?));
+        val = jsonValue::Number(Number::from(v.as_u64().ok_or_else(|| anyhow!("cannot convert to u64"))?));
     } else if v.is_i64() {
-        val = jsonValue::Number(Number::from(v.as_i64().ok_or(anyhow!("cannot convert to i64"))?));
+        val = jsonValue::Number(Number::from(v.as_i64().ok_or_else(|| anyhow!("cannot convert to i64"))?));
     } else if v.is_string() {
-        val = jsonValue::String(v.as_str().ok_or(anyhow!("cannot convert to string"))?.to_string());
+        val = jsonValue::String(v.as_str().ok_or_else(|| anyhow!("cannot convert to string"))?.to_string());
     } else if v.is_sequence() {
         // recursive
         if let Some(seq) = v.as_sequence() {
@@ -39,7 +39,7 @@ pub fn convert_value_yaml_to_json(v: &yamlValue) -> Result<jsonValue> {
 
             for (k, v) in map.into_iter() {
                 //let key = convert_value_yaml_to_json(k)?.as_str().ok_or(anyhow!("key cannot convert to json string"))?;
-                object.insert(convert_value_yaml_to_json(k)?.as_str().ok_or(anyhow!("key cannot convert to json string"))?.to_string(), convert_value_yaml_to_json(v)?);
+                object.insert(convert_value_yaml_to_json(k)?.as_str().ok_or_else(|| anyhow!("key cannot convert to json string"))?.to_string(), convert_value_yaml_to_json(v)?);
             }
 
             val = jsonValue::Object(object);
@@ -62,12 +62,12 @@ pub fn expand_env_value(value: &Value) -> Value {
     match value {
         Value::Array(arr) => {
             let mut v: Vec<Value> = vec![];
-            for e in arr.into_iter() {
+            for e in arr.iter() {
                 let expanded_v = expand_env_value(e);
                 v.push(expanded_v);
             }
 
-            return Value::Array(v);
+            Value::Array(v)
         },
         Value::Object(map) => {
             let mut m: Map<String, Value> = Map::new();
@@ -76,13 +76,13 @@ pub fn expand_env_value(value: &Value) -> Value {
                 m.insert(k.to_string(), expanded_v);
             }
 
-            return Value::Object(m);
+            Value::Object(m)
         },
         Value::Null |
         Value::Bool(_) |
         Value::Number(_) => value.to_owned(),
         Value::String(s) => {
-            return Value::String(envmnt::expand(s, Some(options)));
+            Value::String(envmnt::expand(s, Some(options)))
         }
     }
 }
@@ -106,7 +106,7 @@ pub fn render_param_template(component: &str, key: &str, value: &Value, data: &M
                 v.push(rendered_v);
             }
 
-            return Ok(Value::Array(v));
+            Ok(Value::Array(v))
         },
         Value::Object(map) => {
             let mut m: Map<String, Value> = Map::new();
@@ -115,7 +115,7 @@ pub fn render_param_template(component: &str, key: &str, value: &Value, data: &M
                 m.insert(k.to_string(), rendered_v);
             }
 
-            return Ok(Value::Object(m));
+            Ok(Value::Object(m))
         },
         Value::Null |
         Value::Bool(_) |
@@ -180,7 +180,7 @@ pub fn render_loop_template(component: &str, value: &Value, data: &Map<String, V
                 }
             }
 
-            return Ok(Value::Array(v));
+            Ok(Value::Array(v))
         },
         Value::String(s) => {
             match tera.render_str(s.as_str(), &context) {
@@ -191,7 +191,7 @@ pub fn render_loop_template(component: &str, value: &Value, data: &Map<String, V
                         return Err(anyhow!("Value must be an array"));
                     }
 
-                    return Ok(val)
+                    Ok(val)
                 },
                 Err(e) => Err(anyhow!(e))
             }

@@ -148,7 +148,7 @@ async fn handler(
     Extension(hooks): Extension<Arc<Vec<Hook>>>,
 ) -> impl IntoResponse {
 
-    if hooks.iter().find(|&h| h.name == hook).is_none() {
+    if !hooks.iter().any(|h| h.name == hook) {
         return StatusCode::NOT_FOUND
     }
 

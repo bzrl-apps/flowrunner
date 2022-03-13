@@ -13,7 +13,7 @@ use rdkafka::{
 
 use sqlx::postgres::{PgPool, PgPoolOptions};
 
-use rocksdb::{DB, Options, ColumnFamilyDescriptor};
+use rocksdb::{DB, ColumnFamilyDescriptor};
 
 use log::info;
 
@@ -92,9 +92,9 @@ pub fn cleanup_rocksdb(path: &str, namespaces: &[&str]) {
     //let mut cfs: Vec<ColumnFamilyDescriptor> = Vec::new();
     let options = rocksdb::Options::default();
     // list existing ColumnFamilies in the given path. returns Err when no DB exists.
-    let cfs_old = rocksdb::DB::list_cf(&options, path).unwrap_or(vec![]);
-    if cfs_old.len() > 0 {
-        let mut instance = rocksdb::DB::open_cf(&options, path, cfs_old.clone()).unwrap();
+    let cfs_old = rocksdb::DB::list_cf(&options, path).unwrap_or_default();
+    if !cfs_old.is_empty() {
+        let mut instance = rocksdb::DB::open_cf(&options, path, cfs_old).unwrap();
         for cf in namespaces.iter() {
             info!("Deleting namespace: {}", cf);
             // open a DB with specifying ColumnFamilies

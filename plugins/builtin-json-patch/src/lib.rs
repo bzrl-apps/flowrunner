@@ -68,14 +68,14 @@ impl Plugin for JsonPatch {
         // Check Patch
         match jops_params.get_value_e::<Vec<Op>>("patch") {
             Ok(v) => {
-                if v.len() <= 0 {
+                if v.is_empty() {
                     return Err(anyhow!("Patch must not be empty"));
                 }
 
                 // Check each operation
                 for o in v.iter() {
                     // Check if path or action is empty
-                    if o.path == "" || o.action == "" {
+                    if o.path.is_empty() || o.action.is_empty() {
                         return Err(anyhow!("Path or Op must not be empty"));
                     }
 
@@ -117,7 +117,7 @@ impl Plugin for JsonPatch {
             if op.action == "replace" {
                 if let Some(v) = op.value.clone() {
                     if let Err(e) = json_ops.set_value_by_path(op.path.as_str(), v) {
-                        return_plugin_exec_result_err!(result, format!("op[{}], path {}: {}", idx, op.path, e.to_string()));
+                        return_plugin_exec_result_err!(result, format!("op[{}], path {}: {}", idx, op.path, e));
                     }
                 } else {
                     return_plugin_exec_result_err!(result, format!("op[{}], path {}: for replace action, value must be specified", idx, op.path));
@@ -127,7 +127,7 @@ impl Plugin for JsonPatch {
             if op.action == "add" {
                 if let Some(v) = op.value.clone() {
                     if let Err(e) = json_ops.add_value_by_path(op.path.as_str(), v) {
-                        return_plugin_exec_result_err!(result, format!("op[{}], path {}: {}", idx, op.path, e.to_string()));
+                        return_plugin_exec_result_err!(result, format!("op[{}], path {}: {}", idx, op.path, e));
                     }
                 } else {
                     return_plugin_exec_result_err!(result, format!("op[{}], path {}: for add action, value must be specified", idx, op.path));
@@ -136,7 +136,7 @@ impl Plugin for JsonPatch {
 
             if op.action == "remove" {
                 if let Err(e) = json_ops.remove_value_by_path(op.path.as_str()) {
-                    return_plugin_exec_result_err!(result, format!("op[{}], path {}: {}", idx, op.path, e.to_string()));
+                    return_plugin_exec_result_err!(result, format!("op[{}], path {}: {}", idx, op.path, e));
                 }
             }
         }

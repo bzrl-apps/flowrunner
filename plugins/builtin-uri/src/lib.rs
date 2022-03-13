@@ -143,7 +143,7 @@ impl Plugin for Uri {
         let mut req_builder = client.request(self.method.clone(), self.url.clone());
 
         // Set headers
-        if self.headers.len() > 0 {
+        if !self.headers.is_empty() {
             req_builder = req_builder.headers(self.headers.clone());
         }
 

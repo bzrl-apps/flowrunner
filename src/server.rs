@@ -35,7 +35,7 @@ pub async fn server_run(config: &Config, matches: &ArgMatches<'_>) -> Result<()>
         None => return Err(anyhow!("You must specify the host addr (--host-addr)")),
     };
 
-    let paths = fs::read_dir(config.runner.flow_dir.clone()).expect(format!("Cannot read files in the directory {}", config.runner.flow_dir).as_str());
+    let paths = fs::read_dir(config.runner.flow_dir.clone()).unwrap_or_else(|_| panic!("Cannot read files in the directory {}", config.runner.flow_dir));
     for path in paths {
         if let Some(p) = path?.path().to_str() {
             let flow = Flow::new_from_file(p)?;
@@ -43,10 +43,10 @@ pub async fn server_run(config: &Config, matches: &ArgMatches<'_>) -> Result<()>
             debug!("{:#?}", flow);
             if flow.kind == Kind::Action {
                 if flows.contains_key(&flow.name.clone()) {
-                    panic!("The flow {} already exists", flow.name.clone());
+                    panic!("The flow {} already exists", flow.name);
                 }
 
-                info!("Registering the flow {} ...", flow.name.clone());
+                info!("Registering the flow {} ...", flow.name);
                 flows.insert(flow.name.clone(), flow);
             }
         }
@@ -73,13 +73,13 @@ pub async fn server_run(config: &Config, matches: &ArgMatches<'_>) -> Result<()>
     });
 
     match signal::ctrl_c().await {
-        Ok(()) => return Ok(()),
+        Ok(()) => Ok(()),
         Err(e) => {
             error!("Unable to listen for shutdown signal: {}", e);
             // we also shut down in case of error
-            return Err(anyhow!(e));
+            Err(anyhow!(e))
         },
-    };
+    }
 }
 
 async fn handler(

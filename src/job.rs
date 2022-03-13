@@ -90,12 +90,9 @@ impl Job {
         // Check the name of all tasks indicated in taskflow
         self.check_tasks()?;
 
-        let ts = match tasks {
-            Some(s) => s,
-            None => "",
-        };
+        let ts = tasks.unwrap_or("");
 
-        if self.tx.len() > 0 {
+        if !self.tx.is_empty() {
             loop {
                 match self.tx[0].recv().await {
                     // Add message received as data in job context
@@ -103,7 +100,7 @@ impl Job {
                         match msg {
                             FlowMessage::JsonWithSender{ sender: s, source: src, value: v } => {
                                 self.context.insert("sender".to_string(), Value::String(s));
-                                self.context.insert("source".to_string(), Value::String(src.unwrap_or("".to_string())));
+                                self.context.insert("source".to_string(), Value::String(src.unwrap_or_else(|| "".to_string())));
                                 self.context.insert("data".to_string(), v);
                             },
                             _ => {
@@ -113,7 +110,7 @@ impl Job {
                        }
 
                         // Run certain tasks given in parameter
-                        if ts != "" {
+                        if !ts.is_empty() {
                             if let Err(e) = self.run_task_by_task(ts, datastore.clone()).await {
                                 error!("{e}");
                                 continue;
@@ -143,7 +140,7 @@ impl Job {
             }
         } else {
             // Run certain tasks given in parameter
-            if ts != "" {
+            if !ts.is_empty() {
                 self.run_task_by_task(ts, datastore).await?;
             } else {
                 // Run complete taskflow by running the first task
@@ -174,7 +171,7 @@ impl Job {
             // If task condition is not satisfied, then move to next task as when the task is
             // correctly executed
             let vec_params = self.render_task_template(&mut t)?;
-            if vec_params.len() <= 0 {
+            if vec_params.is_empty() {
                 next_task = match t.on_success.len() {
                     n if n > 0 => self.get_task_by_name(t.on_success.as_str()),
                     _ => None,
@@ -205,7 +202,7 @@ impl Job {
                         if res.status == PluginStatus::Ko {
                             // Go the task of Success if specified
                             next_task = match t.on_failure.len() {
-                                n if n <= 0 => return Err(anyhow!(res.error)),
+                                n if n == 0 => return Err(anyhow!(res.error)),
                                 _ => self.get_task_by_name(t.on_failure.as_str()),
                             };
 
@@ -241,14 +238,14 @@ impl Job {
             return Ok(())
         }
 
-        for s in tasks.split(",") {
+        for s in tasks.split(',') {
             match self.get_task_by_name(s) {
                 Some(mut t) => {
                     info!("Task executed: name {}, params {:?}", t.name, t.params);
 
                     // If task condition is not satisfied then move to next one
                     let vec_params = self.render_task_template(&mut t)?;
-                    if vec_params.len() <= 0 {
+                    if vec_params.is_empty() {
                         continue
                     }
 
@@ -300,16 +297,12 @@ impl Job {
                 return Err(anyhow!("{}", format!("Plugin {} is not found", t.plugin)));
             }
 
-            if t.on_failure != "".to_string() {
-                if map.contains_key(&t.on_failure) != true {
-                    return Err(anyhow!("task ".to_owned() + &t.on_failure + " is not found"));
-                }
+            if !t.on_failure.is_empty() && !map.contains_key(&t.on_failure) {
+                return Err(anyhow!("task ".to_owned() + &t.on_failure + " is not found"));
             }
 
-            if t.on_failure != "".to_string() {
-                if map.contains_key(&t.on_success) != true {
-                    return Err(anyhow!("task ".to_owned() + &t.on_success + " is not found"));
-                }
+            if !t.on_failure.is_empty() && !map.contains_key(&t.on_success) {
+                return Err(anyhow!("task ".to_owned() + &t.on_success + " is not found"));
             }
         }
 

@@ -58,7 +58,7 @@ pub struct StoreNamespace {
 impl StoreConfig {
     pub fn new_store(&self) -> Result<BoxStore> {
         let db: BoxStore = match self.kind.as_str() {
-            "rocksdb" => Box::new(RocksDB::init(&self)),
+            "rocksdb" => Box::new(RocksDB::init(self)),
             _ => return Err(anyhow!("{}", format!("Datastore's kind {} not supported!", self.kind))),
         };
 

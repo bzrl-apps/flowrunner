@@ -49,7 +49,7 @@ impl Sink {
     pub async fn run(&mut self) -> Result<()> {
         info!("SINK RUN STARTED: name {}, plugin {}, params: {:?}, nb tx: {}", self.name, self.plugin, self.params, self.tx.len());
 
-        if self.tx.len() > 0 {
+        if !self.tx.is_empty() {
             loop {
                 match self.tx[0].recv().await {
                     // Add message received as data in job context
@@ -57,7 +57,7 @@ impl Sink {
                         match msg {
                             FlowMessage::JsonWithSender{ sender: s, source: src, value: v } => {
                                 self.context.insert("sender".to_string(), Value::String(s));
-                                self.context.insert("source".to_string(), Value::String(src.unwrap_or("".to_string())));
+                                self.context.insert("source".to_string(), Value::String(src.unwrap_or_else(|| "".to_string())));
                                 self.context.insert("data".to_string(), v);
                             },
                             _ => {

@@ -68,9 +68,9 @@ impl<'r> FromRow<'r, PgRow> for PgqlRow {
 
         let mut columns: Map<String, Value> = Map::new();
 
-        for i in 0..cols.len() {
-            let name = cols[i].name();
-            let type_info = cols[i].type_info().name().to_lowercase();
+        for (i, col) in cols.iter().enumerate() {
+            let name = col.name();
+            let type_info = col.type_info().name().to_lowercase();
 
             match type_info.as_str() {
                 "bool" => {
@@ -101,7 +101,7 @@ impl<'r> FromRow<'r, PgRow> for PgqlRow {
                 "double precision" | "float8" | "real" | "float4" => {
                     let val: f64 = row.try_get(i)?;
 
-                    columns.insert(name.to_string(), Value::Number(Number::from_f64(val).unwrap_or(Number::from(0))));
+                    columns.insert(name.to_string(), Value::Number(Number::from_f64(val).unwrap_or_else(|| Number::from(0))));
                 },
                 "varchar" | "char(n)" | "text" | "name" => {
                     let val: String = row.try_get(i)?;
@@ -465,10 +465,10 @@ impl Plugin for Pgql {
             if eval_boolean(cond.as_str()).unwrap_or(false) {
                 let stmt = st.stmt.as_str();
                 // Parse query
-                let qry_type = sql_parser(&stmt);
+                let qry_type = sql_parser(stmt);
 
                 if qry_type.as_str() == "query" {
-                    let mut qry = sqlx::query_as::<_, PgqlRow>(stmt.clone());
+                    let mut qry = sqlx::query_as::<_, PgqlRow>(<&str>::clone(&stmt));
 
                     for p in st.params.iter() {
                         bind_query!(qry, p, result);
@@ -510,7 +510,7 @@ impl Plugin for Pgql {
                         },
                     };
                 } else { // statement = execute
-                    let mut qry = sqlx::query(stmt.clone());
+                    let mut qry = sqlx::query(<&str>::clone(&stmt));
 
                     for p in st.params.iter() {
                         bind_query!(qry, p, result);

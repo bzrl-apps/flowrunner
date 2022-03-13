@@ -86,7 +86,7 @@ impl Plugin for KafkaProducer {
         match jops_params.get_value_e::<Vec<KafkaMessage>>("messages") {
             Ok(m) => {
                 for m in m.iter() {
-                    if m.topic == "" || m.message == "" {
+                    if m.topic.is_empty() || m.message.is_empty() {
                         return Err(anyhow!("Topic or message must not be empty!"));
                     }
                 }
@@ -132,11 +132,8 @@ impl Plugin for KafkaProducer {
         };
 
         for (k, v) in self.options.iter() {
-            match v.as_str() {
-                Some(s) => {
-                    client_config.set(k.as_str(), s);
-                },
-                None => (),
+            if let Some(s) = v.as_str() {
+                client_config.set(k.as_str(), s);
             }
         }
 
@@ -153,7 +150,7 @@ impl Plugin for KafkaProducer {
             let mut fr = FutureRecord::to(msg.topic.as_str())
                     .payload(msg.message.as_bytes());
 
-            if msg.key != "" {
+            if !msg.key.is_empty() {
                    fr =  fr.key(msg.key.as_bytes());
             }
 

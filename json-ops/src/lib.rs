@@ -1,14 +1,8 @@
-use core::slice;
-use std::any::TypeId;
-
-use log::warn;
+use log::*;
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 //use std::collections::HashMap;
 use serde_json::Value;
-use serde_json::Map;
-use serde_json::json;
-use serde_json::map::Entry;
 
 use anyhow::{anyhow, Result};
 
@@ -62,7 +56,7 @@ impl JsonOps {
     fn get_value_by_path(&self, path: &str) -> Value {
         let mut val = self.value.clone();
 
-        if path == "" {
+        if path.is_empty() {
             return val;
         }
 
@@ -105,7 +99,7 @@ impl JsonOps {
 
         // Check type
         if self_value_type == "object" || self_value_type == "array" {
-            if path == "" {
+            if path.is_empty() {
                 if self_value_type == value_type {
                     self.value = value.clone();
                 } else {
@@ -160,7 +154,7 @@ impl JsonOps {
         // Otherwise, do recursive
         let mut jo = JsonOps::new(next_val);
         slice_path.remove(0);
-        jo.set_value_by_path(slice_path.join(".").as_str(), value.clone())?;
+        jo.set_value_by_path(slice_path.join(".").as_str(), value)?;
 
         self.value[k] = jo.value;
 
@@ -173,7 +167,6 @@ impl JsonOps {
     /// For an array, the new value will be added at the end of it. For an object, a new field
     /// will be added if it does not exist before. Otherwise, the existing field gets updated.
     pub fn add_value_by_path(&mut self, path: &str, value: Value) -> Result<()> {
-        let value_type = get_value_type(&value);
         let self_value_type = get_value_type(&self.value);
 
         // Check type
@@ -182,9 +175,9 @@ impl JsonOps {
         }
 
         // If path not specified and current value is an array, we try to push
-        if path == "" && self_value_type == "array" {
+        if path.is_empty() && self_value_type == "array" {
             if let Some(v) = self.value.as_array_mut() {
-                v.push(value.clone());
+                v.push(value);
 
                 return Ok(());
             } else {
@@ -216,9 +209,8 @@ impl JsonOps {
                 //return Err(anyhow!("{}", format!("Value corresponding to the index {} can not be null", k)));
             if self_value_type == "object" {
                 if let Some(o) = self.value.as_object_mut() {
-                    match o.insert(k.to_string(), value.clone()) {
-                        Some(_) => warn!("Index already exists, its value is updated with the new one"),
-                        None => (),
+                    if o.insert(k.to_string(), value).is_some() {
+                        warn!("Index already exists, its value is updated with the new one");
                     }
 
                     return Ok(());
@@ -238,7 +230,7 @@ impl JsonOps {
         if slice_path.len() <= 1 {
             if new_val_type == "array" {
                 if let Some(v) = self.value[k].as_array_mut() {
-                    v.push(value.clone());
+                    v.push(value);
 
                     return Ok(());
                 } else {
@@ -248,9 +240,8 @@ impl JsonOps {
 
             if new_val_type == "object" {
                 if let Some(o) = self.value[k].as_object_mut() {
-                    match o.insert(k.to_string(), value.clone()) {
-                        Some(_) => warn!("Index already exists, its value is updated with the new one"),
-                        None => (),
+                    if o.insert(k.to_string(), value).is_some() {
+                        warn!("Index already exists, its value is updated with the new one");
                     }
 
                     return Ok(());
@@ -263,7 +254,7 @@ impl JsonOps {
         // Otherwise, do recursive
         let mut jo = JsonOps::new(next_val);
         slice_path.remove(0);
-        jo.add_value_by_path(slice_path.join(".").as_str(), value.clone())?;
+        jo.add_value_by_path(slice_path.join(".").as_str(), value)?;
 
         self.value[k] = jo.value;
 
@@ -280,7 +271,7 @@ impl JsonOps {
         }
 
         // If path not specified and current value is an array, we try to push
-        if path == "" {
+        if path.is_empty() {
             return Err(anyhow!("The path cannot be empty"));
         }
 
@@ -359,6 +350,7 @@ fn get_value_type(value: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[derive(Default, Debug, PartialEq, Serialize, Deserialize)]
     struct Topic {

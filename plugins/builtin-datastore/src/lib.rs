@@ -83,14 +83,14 @@ impl Plugin for DataStore {
         // Check Patch
         match ds_params.get_value_e::<Vec<Op>>("ops") {
             Ok(v) => {
-                if v.len() <= 0 {
+                if v.is_empty() {
                     return Err(anyhow!("Ops must not be empty"));
                 }
 
                 // Check each operation
                 for o in v.iter() {
                     // Check if path or action is empty
-                    if o.namespace == "" || o.key == "" || o.action == "" {
+                    if o.namespace.is_empty() || o.key.is_empty() || o.action.is_empty() {
                         return Err(anyhow!("Namspace, Key or Action must not be empty"));
                     }
 
@@ -139,17 +139,17 @@ impl Plugin for DataStore {
         for (idx, op) in self.ops.iter().enumerate() {
             // Check cond, if false, zap the operation
             let cond = op.cond.clone();
-            if !eval_boolean(cond.unwrap_or("true".to_string()).as_str()).unwrap_or(false) {
+            if !eval_boolean(cond.unwrap_or_else(|| "true".to_string()).as_str()).unwrap_or(false) {
                 continue;
             }
 
             match op.action.as_str() {
                 "set" => {
                     if let Some(v) = op.value.clone() {
-                        let s = serde_json::to_string(&v).unwrap_or("".to_string());
+                        let s = serde_json::to_string(&v).unwrap_or_else(|_| "".to_string());
 
                         if let Err(e) = store.set(op.namespace.as_str(), op.key.as_str(), s.as_str()) {
-                            return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: {}", idx, op.namespace, op.key, e.to_string()));
+                            return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: {}", idx, op.namespace, op.key, e));
                         }
 
 
@@ -173,12 +173,12 @@ impl Plugin for DataStore {
                                     "action" => Value::String(op.action.clone())
                             )));
                         },
-                        Err(e) => { return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: {}", idx, op.namespace, op.key, e.to_string())); },
+                        Err(e) => { return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: {}", idx, op.namespace, op.key, e)); },
                     }
                 },
                 "delete" => {
                     if let Err(e) = store.delete(op.namespace.as_str(), op.key.as_str()) {
-                        return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: {}", idx, op.namespace, op.key, e.to_string()));
+                        return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: {}", idx, op.namespace, op.key, e));
                     }
 
                     result.output.insert(idx.to_string(), Value::Object(json_map!(
@@ -197,7 +197,7 @@ impl Plugin for DataStore {
                                     "action" => Value::String(op.action.clone())
                             )));
                         },
-                        Err(e) => { return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: {}", idx, op.namespace, op.key, e.to_string())); },
+                        Err(e) => { return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: {}", idx, op.namespace, op.key, e)); },
                     }
                 },
                 _ => { return_plugin_exec_result_err!(result, format!("op[{}], ns {}, key {}: {} unknown", idx, op.namespace, op.key, op.action)) }

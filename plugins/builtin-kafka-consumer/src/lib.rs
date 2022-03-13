@@ -121,7 +121,7 @@ impl Plugin for KafkaConsumer {
         let rt = Runtime::new().unwrap();
         let _guard = rt.enter();
 
-        run(sender, self.brokers.clone(), self.config.clone(), &rx).await
+        run(sender, self.brokers.clone(), self.config.clone(), rx).await
     }
 }
 
@@ -147,11 +147,8 @@ async fn run(sender: Option<String>, brokers: Vec<String>, config: Config, rx: &
     };
 
     for (k, v) in config.options.iter() {
-        match v.as_str() {
-            Some(s) => {
-                client_config.set(k.as_str(), s);
-            },
-            None => (),
+        if let Some(s) = v.as_str() {
+            client_config.set(k.as_str(), s);
         }
     }
 
@@ -202,7 +199,7 @@ async fn run(sender: Option<String>, brokers: Vec<String>, config: Config, rx: &
                         };
 
                         let msg = FlowMessage::JsonWithSender {
-                            sender: sender.clone().unwrap_or(brokers.join(",")),
+                            sender: sender.clone().unwrap_or_else(|| brokers.join(",")),
                             source: Some(m.topic().to_string()),
                             value,
                         };

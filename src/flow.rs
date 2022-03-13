@@ -107,7 +107,7 @@ impl Flow {
     }
 
     pub async fn run(&mut self) -> Result<()> {
-        if self.jobs.len() <= 0 {
+        if self.jobs.is_empty() {
             return Err(anyhow!("No job specified"));
         }
 
@@ -115,7 +115,7 @@ impl Flow {
             Kind::Stream => {
                 info!("Flow kind: Stream");
 
-                if self.sources.len() <= 0 {
+                if self.sources.is_empty() {
                     return Err(anyhow!("At least one source must be specified when using flow stream"));
                 }
 
@@ -199,13 +199,13 @@ impl Flow {
         let (tx, rx) = oneshot::channel();
 
         let jobs_cloned = self.jobs.clone();
-        let kind_cloned = self.kind.clone();
+        let kind_cloned = self.kind;
         let datastore_cloned = self.datastore.clone();
         tokio::spawn(async move {
             info!("Run all jobs...");
             match run_all_jobs(kind_cloned, jobs_cloned, datastore_cloned).await {
                 Ok(jobs) => {
-                    if let Err(_) = tx.send(jobs) {
+                    if tx.send(jobs).is_err() {
                         error!("Sending jobs result: receiver dropped");
                     }
                 },
@@ -277,7 +277,7 @@ async fn run_all_jobs(kind: Kind, jobs: Vec<Job>, datastore: Option<StoreConfig>
 async fn exec_job(kind: Kind, jobs: &mut [Job], idx: usize, datastore: Option<StoreConfig>) -> Result<()> {
     let mut job = jobs[idx].clone();
 
-    if job.hosts == "".to_string() || job.hosts == "localhost".to_string() || job.hosts == "127.0.0.1".to_string() {
+    if job.hosts.is_empty() || job.hosts == "localhost" || job.hosts == "127.0.0.1" {
         let _ = exec_job_local(kind, &mut job, datastore.clone()).await?;
         jobs[idx] = job;
 
@@ -339,7 +339,7 @@ fn parse(mapping: Mapping) -> Result<Flow> {
     if let Some(variables) = mapping.get(&yamlValue::String("variables".to_string())) {
         if let Some(vars) = variables.as_mapping() {
             for (k, v) in vars.iter() {
-                let key = k.as_str().ok_or(anyhow!("Error parsing variables' key"))?;
+                let key = k.as_str().ok_or_else(|| anyhow!("Error parsing variables' key"))?;
                 let val = utils::convert_value_yaml_to_json(v)?;
                 flow.variables.insert(key.to_string(), val);
             }
@@ -356,7 +356,7 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                 sc.kind = v.as_str().unwrap_or("").to_string();
             }
 
-            if sc.kind == "" {
+            if sc.kind.is_empty() {
                 return Err(anyhow!("datastore.kind must not be empty!"));
             }
 
@@ -365,7 +365,7 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                 sc.conn_str = v.as_str().unwrap_or("").to_string();
             }
 
-            if sc.conn_str == "" {
+            if sc.conn_str.is_empty() {
                 return Err(anyhow!("datastore.conn_str must not be empty!"));
             }
 
@@ -389,49 +389,46 @@ fn parse(mapping: Mapping) -> Result<Flow> {
 
             // Check Namespaces
             if let Some(v1) = m.get(&yamlValue::String("namespaces".to_string())) {
-                match v1.as_sequence() {
-                    Some(seq) => {
-                        let mut namespaces: Vec<StoreNamespace> = Vec::new();
+                if let Some(seq) = v1.as_sequence() {
+                    let mut namespaces: Vec<StoreNamespace> = Vec::new();
 
-                        for s in seq.iter() {
-                            let mut ns = StoreNamespace::default();
-                            // Check name
-                            if let Some(v) = s.get(&yamlValue::String("name".to_string())) {
-                                ns.name = v.as_str().unwrap_or("").to_string();
-                            }
-
-                            if ns.name == "" {
-                                return Err(anyhow!("datastore namespace's name must not be empty!"));
-                            }
-
-                            // Check prefix_len
-                            if let Some(v) = s.get(&yamlValue::String("prefix_len".to_string())) {
-                                ns.prefix_len = Some(v.as_u64().unwrap_or(0) as usize);
-                            }
-
-                            // Check options
-                            if let Some(v1) = s.get(&yamlValue::String("options".to_string())) {
-                                let mut options = Map::new();
-
-                                if let Some(v2) = v1.as_mapping() {
-                                    for (k, v) in v2.iter() {
-                                        options.insert(k.as_str().unwrap_or("").to_string(), utils::convert_value_yaml_to_json(v)?);
-                                    }
-                                }
-
-                                ns.options = options;
-                            }
-
-                            namespaces.push(ns);
+                    for s in seq.iter() {
+                        let mut ns = StoreNamespace::default();
+                        // Check name
+                        if let Some(v) = s.get(&yamlValue::String("name".to_string())) {
+                            ns.name = v.as_str().unwrap_or("").to_string();
                         }
 
-                        sc.namespaces = namespaces;
-                    },
-                    None => (),
+                        if ns.name.is_empty() {
+                            return Err(anyhow!("datastore namespace's name must not be empty!"));
+                        }
+
+                        // Check prefix_len
+                        if let Some(v) = s.get(&yamlValue::String("prefix_len".to_string())) {
+                            ns.prefix_len = Some(v.as_u64().unwrap_or(0) as usize);
+                        }
+
+                        // Check options
+                        if let Some(v1) = s.get(&yamlValue::String("options".to_string())) {
+                            let mut options = Map::new();
+
+                            if let Some(v2) = v1.as_mapping() {
+                                for (k, v) in v2.iter() {
+                                    options.insert(k.as_str().unwrap_or("").to_string(), utils::convert_value_yaml_to_json(v)?);
+                                }
+                            }
+
+                            ns.options = options;
+                        }
+
+                        namespaces.push(ns);
+                    }
+
+                    sc.namespaces = namespaces;
                 }
             }
 
-            if sc.namespaces.len() <= 0 {
+            if sc.namespaces.is_empty() {
                 return Err(anyhow!("datastore.namespaces must not be empty"));
             }
 
@@ -464,7 +461,7 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                             s.plugin = v.as_str().unwrap_or("").to_string();
                         }
 
-                        if s.plugin == "" {
+                        if s.plugin.is_empty() {
                             return Err(anyhow!("Plugin name can not be empty!"));
                         }
 
@@ -482,7 +479,7 @@ fn parse(mapping: Mapping) -> Result<Flow> {
 
                         sources.push(s);
 
-                        src_count = src_count + 1;
+                        src_count += src_count;
                     }
 
                     sources
@@ -521,10 +518,7 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                         // Check if condition
                         let yaml_value_if = yamlValue::String("if".to_string());
                         if let Some(v) = job.get(yaml_value_if) {
-                            j.r#if = match v.as_str() {
-                                Some(s) => Some(s.to_string()),
-                                None => None,
-                            };
+                            j.r#if = v.as_str().map(|s| s.to_string());
                         }
 
                         let mut tasks: Vec<Task> = Vec::new();
@@ -551,10 +545,7 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                                         // Check if condition
                                         let yaml_value_if = yamlValue::String("if".to_string());
                                         if let Some(n) = v2.get(&yaml_value_if) {
-                                            t.r#if = match n.as_str() {
-                                                Some(s) => Some(s.to_string()),
-                                                None => None,
-                                            };
+                                            t.r#if = n.as_str().map(|s| s.to_string());
 
                                             v2.remove(&yaml_value_if);
                                         }
@@ -572,12 +563,7 @@ fn parse(mapping: Mapping) -> Result<Flow> {
 
                                                     Some(jsonValue::Array(items))
                                                 },
-                                                None => {
-                                                    match n.as_str() {
-                                                        Some(s) => Some(jsonValue::String(s.to_string())),
-                                                        None => None,
-                                                    }
-                                                },
+                                                None => n.as_str().map(|s| jsonValue::String(s.to_string())),
                                             };
 
                                             v2.remove(&yaml_value_loop);
@@ -600,9 +586,9 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                                         }
 
                                         // Check plugin
-                                        if let Some((k, v)) = v2.iter().nth(0) {
+                                        if let Some((k, v)) = v2.iter().next() {
                                             t.plugin = k.as_str().unwrap_or("").to_string();
-                                            if t.plugin == "" {
+                                            if t.plugin.is_empty() {
                                                 return Err(anyhow!("Plugin name can not be empty!"));
                                             }
 
@@ -624,14 +610,14 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                                         }
 
                                         // Set on_success for the previous task to this one
-                                        if task_count > 1 && tasks[task_count-2].on_success == "" {
+                                        if task_count > 1 && tasks[task_count-2].on_success.is_empty() {
                                             tasks[task_count-2].on_success = t.name.to_owned();
                                         }
                                     }
 
                                     tasks.push(t);
 
-                                    task_count = task_count + 1;
+                                    task_count += 1;
                                 }
                             }
                         }
@@ -640,7 +626,7 @@ fn parse(mapping: Mapping) -> Result<Flow> {
 
                         jobs.push(j);
 
-                        job_count = job_count + 1;
+                        job_count += 1;
                     }
 
                     jobs
@@ -674,10 +660,7 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                         // Check if condition
                         let yaml_value_if = yamlValue::String("if".to_string());
                         if let Some(v) = sk.get(yaml_value_if) {
-                            s.r#if = match v.as_str() {
-                                Some(s) => Some(s.to_string()),
-                                None => None,
-                            };
+                            s.r#if = v.as_str().map(|s| s.to_string());
                         }
 
                         // Check plugin
@@ -685,7 +668,7 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                             s.plugin = v.as_str().unwrap_or("").to_string();
                         }
 
-                        if s.plugin == "" {
+                        if s.plugin.is_empty() {
                             return Err(anyhow!("Plugin name can not be empty!"));
                         }
 
@@ -703,7 +686,7 @@ fn parse(mapping: Mapping) -> Result<Flow> {
 
                         sinks.push(s);
 
-                        sink_count = sink_count + 1;
+                        sink_count += 1;
                     }
 
                     sinks

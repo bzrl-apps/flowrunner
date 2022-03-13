@@ -16,7 +16,7 @@ pub async fn exec_cmd(config: &Config, matches: &ArgMatches<'_>) -> Result<()> {
 
     let mut flow = Flow::new_from_file(&(config.runner.flow_dir.as_str().to_owned() + "/" + file))?;
 
-    let kind = flow.kind.clone();
+    let kind = flow.kind;
 
     // flow == stream
     if kind == Kind::Stream {
