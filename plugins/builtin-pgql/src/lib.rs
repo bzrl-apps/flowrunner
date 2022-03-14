@@ -23,6 +23,7 @@ use sqlx::postgres::{PgPoolOptions, PgRow};
 use sqlx::{Row, FromRow, Column, TypeInfo};
 
 use chrono::{DateTime, Utc, NaiveDate, NaiveDateTime, NaiveTime};
+#[allow(unused_imports)]
 use std::str::FromStr;
 
 use evalexpr::*;

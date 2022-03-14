@@ -100,6 +100,7 @@ impl Flow {
         parse(mapping)
     }
 
+    #[allow(dead_code)]
     pub fn new_from_str(content: &str) -> Result<Flow> {
         let mapping: Mapping = serde_yaml::from_str(content).unwrap();
 

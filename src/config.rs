@@ -19,6 +19,7 @@ pub struct RunnerConfig {
     pub job_parallel: bool
 }
 
+#[allow(dead_code)]
 pub fn new(config_file: &str) -> Result<Config, Box<dyn Error>> {
     let f = File::open(config_file)?;
     let config: Config = serde_yaml::from_reader(f)?;
