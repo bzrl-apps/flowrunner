@@ -40,13 +40,11 @@ async fn main() {
                         .arg(Arg::with_name("plugin-dir")
                             .short("p")
                             .long("--plugin-dir")
-                            .default_value("plugins")
                             .takes_value(true)
                             .help("Module directory"))
                         .arg(Arg::with_name("flow-dir")
                             .short("w")
                             .long("--flow-dir")
-                            .default_value("flows")
                             .takes_value(true)
                             .help("Flow directory"))
                         .subcommand(
@@ -76,20 +74,22 @@ async fn main() {
     info!("File: {:?}", config_file);
     info!("Content: {:?}", config);
 
-    let plugin_dir = matches.value_of("plugin-dir").unwrap_or("plugins");
-    let flow_dir = matches.value_of("flow-dir").unwrap_or("flows");
+    if let Some(plugin_dir) = matches.value_of("plugin-dir") {
+        config.runner.plugin_dir = <&str>::clone(&plugin_dir).to_owned();
+    }
+
+    if let Some(flow_dir) = matches.value_of("flow-dir") {
+        config.runner.flow_dir = <&str>::clone(&flow_dir).to_owned();
+    }
 
     info!("--- Flags ---");
-    info!("Plugin directory: {}", plugin_dir);
-    info!("Flow directory: {}", flow_dir);
-
-    config.runner.plugin_dir = <&str>::clone(&plugin_dir).to_owned();
-    config.runner.flow_dir = <&str>::clone(&flow_dir).to_owned();
+    info!("Plugin directory: {}", config.runner.plugin_dir);
+    info!("Flow directory: {}", config.runner.flow_dir);
 
     info!("--- Final configuration ---");
     info!("{:?}", config);
 
-    PluginRegistry::load_plugins(plugin_dir).await;
+    PluginRegistry::load_plugins(config.runner.plugin_dir.as_str()).await;
 
     match matches.subcommand() {
         ("exec", Some(exec_matches)) => {
