@@ -17,7 +17,10 @@ split-debuginfo = "unpacked" # Faster debug builds on macOS
 # This results in roughly a 5% reduction in performance when compiling locally vs when
 # compiled via the CI pipeline.
 [profile.release]
-debug = false # Do not include debug symbols in the executable.
+strip = true # Do not include debug symbols in the executable.
+opt-level = "z"
+lto = true
+codegen-units = 1
 
 [profile.bench]
 debug = true

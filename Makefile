@@ -1,5 +1,3 @@
-# Command variables
-
 # Bin variables
 INSTALL 	= /usr/bin/install
 MKDIR 		= mkdir -p
@@ -7,6 +5,18 @@ RM 		= rm
 CP 		= cp
 DOCKER_COMPOSE ?= docker-compose
 DOCKER_COMPOSE_EXEC ?= docker-compose exec -T
+
+# Export SCCACHE vars
+
+export SCCACHE_ERROR_LOG = /tmp/sccache_log
+export SCCACHE_BUCKET = bzrl-rust-sccache
+export SCCACHE_ENDPOINT = s3.fr-par.scw.cloud
+export SCCACHE_S3_KEY_PREFIX = flowrunner
+export SCCACHE_S3_USE_SSL = true
+#export AWS_ACCESS_KEY_ID =
+#export AWS_SECRET_ACCESS_KEY =
+
+#CARGO_HOME ?= $(shell git rev-parse --show-toplevel)/.cargo
 
 # Optimization build processes
 #CPUS ?= $(shell nproc)
@@ -16,7 +26,8 @@ DOCKER_COMPOSE_EXEC ?= docker-compose exec -T
 
 # Compilation variables
 PROJECT_BUILD_SRCS = $(shell git ls-files '*.rs')
-PROJECT_BUILD_TARGET = flowrunner
+PROJECT_BUILD_BIN = flowrunner
+PROJECT_BUILD_TARGETS = x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin
 PROJECT_ARTIFACTS = target/artifacts
 
 # Docker image
@@ -27,12 +38,22 @@ DOCKER_IMAGE_TAG ?= latest
 EMPTY:=
 SPACE:= ${EMPTY} ${EMPTY}
 
+CROSS_TARGETS := $(foreach t,$(PROJECT_BUILD_TARGETS),cross-build-$(t))
+ARCHIVE_TARGETS := $(foreach t,$(PROJECT_BUILD_TARGETS),archive-$(t))
+
 all: clean build
 
 .PHONY: all
 
+build: export CARGO_HOME ?= $(CARGO_HOME)
+build:
+	make $(CROSS_TARGETS)
+
+.PHONY: build
+
 # Cross command targets multiple platforms
 # cross-build, cross-test => cross build or cross test
+#cross-%: export CARGO_HOME ?= $(CARGO_HOME)
 cross-%: export PAIR =$(subst -, ,$($(strip @):cross-%=%))
 cross-%: export CMD ?=$(word 1,${PAIR})
 cross-%: export TRIPLE ?=$(subst ${SPACE},-,$(wordlist 2,99,${PAIR}))
@@ -49,8 +70,10 @@ clean:
 
 .PHONY: clean
 
-linters:
-.PHONY: linters
+clippy:
+	docker run -it --rm -v $(PWD):/app uthng/cross:amd64-debian cargo clippy --workspace --target x86_64-unknown-linux-gnu
+
+.PHONY: clippy
 
 deps:
 	@echo "Install cross..."
@@ -74,9 +97,12 @@ archive-%:
 	echo "Archiving binaries for $(TRIPLE)..."
 	mkdir -p $(PROJECT_ARTIFACTS)
 	cp -av README.md $(TARGET_DIR)
-	tar -cvzf "$(PROJECT_ARTIFACTS)/$(PROJECT_BUILD_TARGET)-${RELEASE_VERSION}-$(ARCH)-$(OS).tar.gz" -C $(TARGET_DIR) "README.md" $(PROJECT_BUILD_TARGET) $(notdir $(wildcard $(TARGET_DIR)/*.so)) $(notdir $(wildcard $(TARGET_DIR)/*.dylib))
+	tar -cvzf "$(PROJECT_ARTIFACTS)/$(PROJECT_BUILD_BIN)-${RELEASE_VERSION}-$(ARCH)-$(OS).tar.gz" -C $(TARGET_DIR) "README.md" $(PROJECT_BUILD_BIN) $(notdir $(wildcard $(TARGET_DIR)/*.so)) $(notdir $(wildcard $(TARGET_DIR)/*.dylib))
 
-.PHONY: archives
+.PHONY: archive-%
+
+archives:
+	make $(ARCHIVE_TARGETS)
 
 docker-build:
 	@echo "Building the docker image..."

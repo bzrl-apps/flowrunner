@@ -1,8 +1,22 @@
+[build.env]
+passthrough = [
+    "SCCACHE_ERROR_LOG",
+    "SCCACHE_LOG",
+    "SCCACHE_BUCKET",
+    "SCCACHE_ENDPOINT",
+    "SCCACHE_S3_KEY_PREFIX",
+    "SCCACHE_S3_USE_SSL",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+]
+
 [target.x86_64-unknown-linux-gnu]
-image = "uthng/cross:x86_64-unknown-linux-gnu"
+#image = "uthng/cross:x86_64-unknown-linux-gnu"
+image = "uthng/cross:amd64-debian"
 
 [target.aarch64-unknown-linux-gnu]
-image = "uthng/cross:aarch64-unknown-linux-gnu"
+#image = "uthng/cross:aarch64-unknown-linux-gnu"
+image = "uthng/cross:arm64-debian"
 [target.aarch64-unknown-linux-gnu.env]
 passthrough = [
     "BINDGEN_EXTRA_CLANG_ARGS",

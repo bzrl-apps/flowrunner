@@ -30,17 +30,19 @@ build() {
     local DOCKERFILE="dist/docker/$BASE/Dockerfile"
 
     if [ -n "$PLATFORM" ]; then
-        ARGS=""
+        local ARGS=""
         if [[ "$PUSH" == "true" ]]; then
             ARGS="${ARGS} --push"
         fi
 
-        docker buildx build \
-            --platform="$PLATFORM" \
-            --tag "$TAG" \
-            ${DIR_ARTIFACTS} \
-            -f "$DOCKERFILE" \
-            ${ARGS}
+        for PF in ${PLATFORM}; do
+            docker buildx build \
+                --platform="$PLATFORM" \
+                --tag "$TAG" \
+                ${DIR_ARTIFACTS} \
+                -f "$DOCKERFILE" \
+                ${ARGS}
+        done
     else
         docker build \
             --tag "$TAG" \
@@ -61,9 +63,9 @@ echo "Building $REPO:* Docker images"
 
 VERSION_EXACT="$VERSION"
 # shellcheck disable=SC2001
-VERSION_MINOR_X=$(echo "$VERSION" | sed 's/\.[0-9]*$/.X/g')
+VERSION_MINOR_X=$(echo "$VERSION" | sed 's/\.[0-9]*$//g')
 # shellcheck disable=SC2001
-VERSION_MAJOR_X=$(echo "$VERSION" | sed 's/\.[0-9]*\.[0-9]*$/.X/g')
+VERSION_MAJOR_X=$(echo "$VERSION" | sed 's/\.[0-9]*\.[0-9]*$//g')
 
 for VERSION_TAG in "$VERSION_EXACT" "$VERSION_MINOR_X" "$VERSION_MAJOR_X" latest; do
     build debian "$VERSION_TAG"
