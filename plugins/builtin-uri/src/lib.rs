@@ -17,6 +17,7 @@ use anyhow::{anyhow, Result};
 //use tokio::sync::*;
 use async_channel::{Sender, Receiver};
 use async_trait::async_trait;
+use tokio::runtime::Runtime;
 
 use log::debug;
 
@@ -136,6 +137,9 @@ impl Plugin for Uri {
         let _ =  env_logger::try_init();
 
         let mut result = PluginExecResult::default();
+
+        let rt = Runtime::new().unwrap();
+        let _guard = rt.enter();
 
         let client = reqwest::Client::new();
 
