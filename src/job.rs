@@ -202,7 +202,7 @@ impl Job {
                         if res.status == PluginStatus::Ko {
                             // Go the task of Success if specified
                             next_task = match t.on_failure.len() {
-                                n if n == 0 => return Err(anyhow!(res.error)),
+                                n if n == 0 => None,
                                 _ => self.get_task_by_name(t.on_failure.as_str()),
                             };
 

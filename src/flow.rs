@@ -279,7 +279,9 @@ async fn exec_job(kind: Kind, jobs: &mut [Job], idx: usize, datastore: Option<St
     let mut job = jobs[idx].clone();
 
     if job.hosts.is_empty() || job.hosts == "localhost" || job.hosts == "127.0.0.1" {
-        let _ = exec_job_local(kind, &mut job, datastore.clone()).await?;
+        if let Err(e) = exec_job_local(kind, &mut job, datastore.clone()).await {
+            error!("exec_job_local: {e}");
+        }
         jobs[idx] = job;
 
         debug!("Job: {:?}", jobs[idx]);
@@ -287,10 +289,12 @@ async fn exec_job(kind: Kind, jobs: &mut [Job], idx: usize, datastore: Option<St
         return Ok(());
     }
 
-   let _ = exec_job_remote(&mut job)?;
-   jobs[idx] = job;
+    if let Err(e) = exec_job_remote(&mut job) {
+        error!("exec_job_remote: {e}");
+    }
+    jobs[idx] = job;
 
-   Ok(())
+    Ok(())
 }
 
 async fn exec_job_local(kind: Kind, job: &mut Job, datastore: Option<StoreConfig>) -> Result<()> {
