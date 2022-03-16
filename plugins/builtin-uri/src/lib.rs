@@ -255,9 +255,8 @@ mod tests {
 
         uri.validate_params(params.clone()).unwrap();
 
-        let txs = Vec::<Sender<FlowMessage>>::new();
-        let rxs = Vec::<Receiver<FlowMessage>>::new();
-
-        let result = uri.func(None, &txs, &rxs).await;
+        tokio::spawn(async move{
+            let _ = uri.func(None, &vec![], &vec![]).await;
+        });
     }
 }
