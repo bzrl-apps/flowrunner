@@ -56,10 +56,11 @@ impl Plugin for Uri {
 
     fn validate_params(&mut self, params: Map<String, Value>) -> Result<()> {
         let jops_params = JsonOps::new(Value::Object(params));
+        let mut default = Uri::default();
 
         // Check URL
         match jops_params.get_value_e::<String>("url") {
-            Ok(u) => self.url = u,
+            Ok(u) => default.url = u,
             Err(e) => {
                 return Err(anyhow!(e));
             },
@@ -69,7 +70,7 @@ impl Plugin for Uri {
         match jops_params.get_value_e::<String>("method") {
             Ok(m) => {
                 match Method::from_bytes(m.as_bytes()) {
-                    Ok(m) => self.method = m,
+                    Ok(m) => default.method = m,
                     Err(e) => { return Err(anyhow!(e)); },
                 }
             },
@@ -92,41 +93,33 @@ impl Plugin for Uri {
                         Err(e) => { return Err(anyhow!(e)); },
                     };
 
-                    self.headers.insert(header, value);
+                    default.headers.insert(header, value);
                 }
             },
             Err(_) => {
                 //return Err(anyhow!(e));
-                self.headers = HeaderMap::new();
+                default.headers = HeaderMap::new();
             },
         };
 
         // Check StatusCode (optional)
-        match jops_params.get_value_e::<Vec<u16>>("status_codes") {
-            Ok(s) => {
-                for st in s.iter() {
-                    match StatusCode::from_u16(*st) {
-                        Ok(s) => self.status_codes.push(s),
-                        Err(e) => { return Err(anyhow!(e)); },
-                    }
+        if let Ok(s) = jops_params.get_value_e::<Vec<u16>>("status_codes") {
+            for st in s.iter() {
+                match StatusCode::from_u16(*st) {
+                    Ok(s) => default.status_codes.push(s),
+                    Err(e) => { return Err(anyhow!(e)); },
                 }
-            },
-            Err(_) => {
-                //return Err(anyhow!(e));
-                self.status_codes = vec![StatusCode::OK];
-            },
-        };
+            }
+        } else {
+            default.status_codes = vec![StatusCode::OK];
+        }
 
         // Check Body (optional)
-        match jops_params.get_value_e::<String>("body") {
-            Ok(b) => {
-                self.body = Some(b);
-            },
-            Err(_) => {
-                //return Err(anyhow!(e));
-                self.body = None;
-            },
-        };
+        if let Ok(b) = jops_params.get_value_e::<String>("body") {
+            default.body = Some(b);
+        }
+
+        *self = default;
 
         Ok(())
     }
@@ -161,7 +154,7 @@ impl Plugin for Uri {
             Ok(r) => {
                 let status = r.status();
 
-                if self.status_codes.contains(&status) {
+                if self.status_codes.is_empty() || self.status_codes.contains(&status) {
                     result.status = Status::Ok;
                 } else {
                     result.status = Status::Ko;

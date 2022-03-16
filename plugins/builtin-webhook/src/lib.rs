@@ -180,9 +180,6 @@ pub fn get_plugin() -> *mut (dyn Plugin + Send + Sync) {
 
 #[cfg(test)]
 mod tests {
-    use flowrunner::{
-        plugin_exec_result,
-    };
     use reqwest::header::CONTENT_TYPE;
 
     use super::*;
