@@ -325,16 +325,7 @@ impl Job {
         let component = task.name.as_str();
 
         data.insert("context".to_string(), Value::Object(self.context.clone()));
-
-        // Convert job'Vs result HashMap to serde_json Map
-        let mut job_result: Map<String, Value> = Map::new();
-
-        for (n, r) in self.result.iter() {
-            let r_value = Value::from(serde_json::to_string(r)?);
-            job_result.insert(n.to_string(), r_value);
-        }
-
-        data.insert("result".to_string(), Value::from(job_result));
+        data.insert("result".to_string(), Value::Object(self.result.clone()));
 
         expand_env_map(&mut data);
 
