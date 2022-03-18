@@ -19,7 +19,7 @@ use async_channel::{Sender, Receiver};
 use async_trait::async_trait;
 use tokio::runtime::Runtime;
 
-use log::debug;
+use log::*;
 
 use reqwest::{Method, StatusCode, Body};
 use reqwest::header::{HeaderName, HeaderValue, HeaderMap};
@@ -188,14 +188,14 @@ impl Plugin for Uri {
                 // Handle cookies
                 let mut cookies: Map<String, Value> = Map::new();
                 for cookie in r.cookies() {
-                    cookies.insert(cookie.name().to_string(), Value::String(cookie.value().to_string()));
+                    cookies.insert(cookie.name().to_string(), serde_json::from_str(cookie.value()).unwrap_or(Value::Null));
                 }
 
                 result.output.insert("cookies".to_string(), Value::Object(cookies));
 
                 // Handle body text
                 match r.text().await {
-                    Ok(t) => { result.output.insert("content".to_string(), Value::String(t)); },
+                    Ok(t) => { result.output.insert("content".to_string(), serde_json::from_str(t.as_str()).unwrap_or(Value::Null)); },
                     Err(e) => {
                         result.status = Status::Ko;
                         result.error = e.to_string();
