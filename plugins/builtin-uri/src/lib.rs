@@ -32,6 +32,12 @@ struct Uri {
     headers: HeaderMap,
     status_codes: Vec<StatusCode>,
     body: Option<String>,
+
+    include_resp_headers: bool,
+    include_resp_url: bool,
+    include_resp_remote_addr: bool,
+    include_resp_content_length: bool,
+    include_resp_cookies: bool,
 }
 
 #[async_trait]
@@ -119,6 +125,31 @@ impl Plugin for Uri {
             default.body = Some(b);
         }
 
+        // Check include_resp_cookies (optional)
+        if let Ok(v) = jops_params.get_value_e::<bool>("include_resp_cookies") {
+            default.include_resp_cookies = v;
+        }
+
+        // Check include_resp_content_length (optional)
+        if let Ok(v) = jops_params.get_value_e::<bool>("include_resp_content_length") {
+            default.include_resp_content_length = v;
+        }
+
+        // Check include_resp_remote_addr (optional)
+        if let Ok(v) = jops_params.get_value_e::<bool>("include_resp_remote_addr") {
+            default.include_resp_remote_addr = v;
+        }
+
+        // Check include_resp_url (optional)
+        if let Ok(v) = jops_params.get_value_e::<bool>("include_resp_url") {
+            default.include_resp_url = v;
+        }
+
+        // Check include_resp_headers (optional)
+        if let Ok(v) = jops_params.get_value_e::<bool>("include_resp_headers") {
+            default.include_resp_headers = v;
+        }
+
         *self = default;
 
         Ok(())
@@ -164,34 +195,44 @@ impl Plugin for Uri {
                 result.output.insert("status_code".to_string(), Value::Number(Number::from(status.as_u16())));
 
                 // Handler response's header
-                let mut headers: Map<String, Value> = Map::new();
-                for (k, v) in r.headers().iter() {
-                    headers.insert(k.as_str().to_string(), Value::String(v.to_str().unwrap_or("N/A").to_string()));
-                }
+                if self.include_resp_headers {
+                    let mut headers: Map<String, Value> = Map::new();
+                    for (k, v) in r.headers().iter() {
+                        headers.insert(k.as_str().to_string(), Value::String(v.to_str().unwrap_or("N/A").to_string()));
+                    }
 
-                result.output.insert("headers".to_string(), Value::Object(headers));
+                    result.output.insert("headers".to_string(), Value::Object(headers));
+                }
 
                 // Handle content-length
-                result.output.insert("content_length".to_string(), Value::Number(Number::from(r.content_length().unwrap_or(0))));
-
-                // Handle url
-                result.output.insert("url".to_string(), Value::String(r.url().as_str().to_string()));
-
-                // Handle SocketAddr
-                let remote_addr = match r.remote_addr() {
-                    Some(ip) => ip.to_string(),
-                    None => "N/A".to_string(),
-                };
-
-                result.output.insert("remote_addr".to_string(), Value::String(remote_addr));
-
-                // Handle cookies
-                let mut cookies: Map<String, Value> = Map::new();
-                for cookie in r.cookies() {
-                    cookies.insert(cookie.name().to_string(), serde_json::from_str(cookie.value()).unwrap_or(Value::Null));
+                if self.include_resp_content_length {
+                    result.output.insert("content_length".to_string(), Value::Number(Number::from(r.content_length().unwrap_or(0))));
                 }
 
-                result.output.insert("cookies".to_string(), Value::Object(cookies));
+                // Handle url
+                if self.include_resp_url {
+                    result.output.insert("url".to_string(), Value::String(r.url().as_str().to_string()));
+                }
+
+                // Handle SocketAddr
+                if self.include_resp_remote_addr {
+                    let remote_addr = match r.remote_addr() {
+                        Some(ip) => ip.to_string(),
+                        None => "N/A".to_string(),
+                    };
+
+                    result.output.insert("remote_addr".to_string(), Value::String(remote_addr));
+                }
+
+                // Handle cookies
+                if self.include_resp_cookies {
+                    let mut cookies: Map<String, Value> = Map::new();
+                    for cookie in r.cookies() {
+                        cookies.insert(cookie.name().to_string(), serde_json::from_str(cookie.value()).unwrap_or(Value::Null));
+                    }
+
+                    result.output.insert("cookies".to_string(), Value::Object(cookies));
+                }
 
                 // Handle body text
                 match r.text().await {
