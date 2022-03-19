@@ -39,7 +39,9 @@ pub async fn exec_cmd(config: &Config, matches: &ArgMatches<'_>) -> Result<()> {
 
     // flow == action
     match flow.run().await {
-        Ok(()) => info!("{flow:?}"),
+        Ok(()) => {
+            info!("Flow: {}", serde_json::to_string_pretty(&flow).unwrap_or_else(|_| "Cannot to serialize flow to string".to_string()));
+        },
         Err(e) => error!("{e}"),
     }
 
