@@ -14,6 +14,15 @@ env:
   CI_USER_EMAIL: ci@uthng.me
   DOCKER_BUILDKIT: 1
   COMPOSE_DOCKER_CLI_BUILD: 1
+  SCCACHE_VER: v0.2.15
+  SCCACHE_ERROR_LOG: /tmp/sccache_log
+  SCCACHE_BUCKET: bzrl-rust-sccache
+  SCCACHE_ENDPOINT: s3.fr-par.scw.cloud
+  SCCACHE_S3_KEY_PREFIX: flowrunner
+  SCCACHE_S3_USE_SSL: true
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  RUSTC_WRAPPER: /usr/local/bin/sccache
 
 jobs:
   check_test_build:
@@ -33,14 +42,19 @@ jobs:
             override: true
             components: rustfmt, clippy
 
-      - name: Check linters
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --workspace
-
       - name: Install dependencies
-        run: make deps
+        run: |
+          curl -L https://github.com/mozilla/sccache/releases/download/${SCCACHE_VER}/sccache-${SCCACHE_VER}-x86_64-unknown-linux-musl.tar.gz | tar xzf -
+          sudo mv sccache-${SCCACHE_VER}-x86_64-unknown-linux-musl/sccache /usr/local/bin/
+          chmod +x /usr/local/bin/sccache
+          make deps
+
+      - name: debug env
+        run: env
+
+      - name: Check linters
+        run: |
+          make clippy-linux
 
       - name: Launch unit tests
         run: make tests

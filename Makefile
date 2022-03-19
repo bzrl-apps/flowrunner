@@ -71,10 +71,12 @@ clean:
 
 .PHONY: clean
 
-clippy:
-	docker run -it --rm -e SCCACHE_ERROR_LOG=$(SCCACHE_ERROR_LOG) -e SCCACHE_S3_USE_SSL=$(SCCACHE_S3_USE_SSL) -e SCCACHE_S3_KEY_PREFIX=$(SCCACHE_S3_KEY_PREFIX) -e SCCACHE_ENDPOINT=$(SCCACHE_ENDPOINT) -e SCCACHE_BUCKET=$(SCCACHE_BUCKET) -e AWS_SECRET_ACCESS_KEY=$(AWS_SECRET_ACCESS_KEY) -e AWS_ACCESS_KEY_ID=$(AWS_ACCESS_KEY_ID) -v $(PWD):/app uthng/cross:amd64-debian cargo clippy --workspace --target x86_64-unknown-linux-gnu
+clippy-linux:
+	echo $(AWS_ACCESS_KEY_ID)
+	#docker run --rm -e SCCACHE_ERROR_LOG=$(SCCACHE_ERROR_LOG) -e SCCACHE_S3_USE_SSL=$(SCCACHE_S3_USE_SSL) -e SCCACHE_S3_KEY_PREFIX=$(SCCACHE_S3_KEY_PREFIX) -e SCCACHE_ENDPOINT=$(SCCACHE_ENDPOINT) -e SCCACHE_BUCKET=$(SCCACHE_BUCKET) -e AWS_SECRET_ACCESS_KEY=$(AWS_SECRET_ACCESS_KEY) -e AWS_ACCESS_KEY_ID=$(AWS_ACCESS_KEY_ID) -v $(PWD):/app uthng/cross:amd64-debian cargo clippy --workspace --target x86_64-unknown-linux-gnu
+	cargo clippy --workspace --target x86_64-unknown-linux-gnu
 
-.PHONY: clippy
+.PHONY: clippy-linux
 
 deps:
 	@echo "Install cross..."
@@ -83,7 +85,7 @@ deps:
 .PHONY: deps
 
 tests: docker-start
-	cargo test --workspace -- --show-output
+	cargo test --workspace --target x86_64-unknown-linux-gnu -- --show-output
 	make docker-stop
 
 .PHONY: tests
