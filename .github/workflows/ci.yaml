@@ -84,7 +84,9 @@ jobs:
         with:
           name: flowrunner-target
           path: |
-            target
+            target/x86_64-apple-darwin/release
+            target/x86_64-unknown-linux-gnu/release
+            target/aarch64-unknown-linux-gnu/release
           retention-days: 1
 
 
