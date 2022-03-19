@@ -31,7 +31,7 @@ struct Uri {
     method: Method,
     headers: HeaderMap,
     status_codes: Vec<StatusCode>,
-    body: Option<String>,
+    body: Option<Value>,
 
     include_resp_headers: bool,
     include_resp_url: bool,
@@ -121,7 +121,7 @@ impl Plugin for Uri {
         }
 
         // Check Body (optional)
-        if let Ok(b) = jops_params.get_value_e::<String>("body") {
+        if let Ok(b) = jops_params.get_value_e::<Value>("body") {
             default.body = Some(b);
         }
 
@@ -177,7 +177,7 @@ impl Plugin for Uri {
 
         // Set body
         if let Some(b) = self.body.clone() {
-            req_builder = req_builder.body(Body::from(b));
+            req_builder = req_builder.body(Body::from(b.to_string()));
         }
 
         // Execute request
