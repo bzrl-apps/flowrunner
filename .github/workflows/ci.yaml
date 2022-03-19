@@ -35,6 +35,17 @@ jobs:
 
       - uses: wagoid/commitlint-github-action@v2
 
+      - name: Restore Cache
+        uses: actions/cache@v1
+        id: flowrunner-cargo
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cargo/bin
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
       - name: Install latest stable
         uses: actions-rs/toolchain@v1
         with:
@@ -52,29 +63,21 @@ jobs:
       - name: debug env
         run: env
 
-      - name: Check linters
-        run: |
-          make clippy-linux
+      #- name: Check linters
+        #run: |
+          #make clippy
 
-      - name: Launch unit tests
-        run: make tests
-
-      - name: Restore Cache
-        uses: actions/cache@v1
-        id: flowrunner-cargo
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            ~/.cargo/bin
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      #- name: Launch unit tests
+        #run: make tests
 
       #- name: Launch integration tests
         #run: make test-integration
         #
       - name: Build multiple platforms
-        run: make build-linux
+        run: |
+          #export RUSTC_WRAPPER=
+          env
+          make build-linux
 
       - name: Archive generated binaries
         uses: actions/upload-artifact@v2
@@ -177,9 +180,9 @@ jobs:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
         run: npx -p conventional-changelog-conventionalcommits -p @semantic-release/changelog -p @semantic-release/git -p @semantic-release/exec -p @semantic-release/github -p semantic-release semantic-release
 
-      - name: Update back next
-        run: |
-          git checkout next
-          git pull origin next
-          git merge --no-ff master next -X theirs -m "chore(merge): auto merge master to next"
-          git push origin next
+      #- name: Update back next
+        #run: |
+          #git checkout next
+          #git pull origin next
+          #git merge --no-ff master next -X theirs -m "chore(merge): auto merge master to next"
+          #git push origin next

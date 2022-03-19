@@ -37,7 +37,7 @@ build() {
 
         for PF in ${PLATFORM}; do
             docker buildx build \
-                --platform="$PLATFORM" \
+                --platform="${PF}" \
                 --tag "$TAG" \
                 ${DIR_ARTIFACTS} \
                 -f "$DOCKERFILE" \

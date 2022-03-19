@@ -13,6 +13,7 @@ export SCCACHE_BUCKET = bzrl-rust-sccache
 export SCCACHE_ENDPOINT = s3.fr-par.scw.cloud
 export SCCACHE_S3_KEY_PREFIX = flowrunner
 export SCCACHE_S3_USE_SSL = true
+export RUSTC_WRAPPER = /usr/local/bin/sccache
 #export AWS_ACCESS_KEY_ID =
 #export AWS_SECRET_ACCESS_KEY =
 
@@ -47,8 +48,7 @@ all: clean build
 .PHONY: all
 
 #build: export CARGO_HOME ?= $(CARGO_HOME)
-build-linux:
-	make $(CROSS_LINUX_TARGETS)
+build-linux: $(CROSS_LINUX_TARGETS)
 
 .PHONY: build-linux
 
@@ -71,12 +71,11 @@ clean:
 
 .PHONY: clean
 
-clippy-linux:
-	echo $(AWS_ACCESS_KEY_ID)
+clippy:
 	#docker run --rm -e SCCACHE_ERROR_LOG=$(SCCACHE_ERROR_LOG) -e SCCACHE_S3_USE_SSL=$(SCCACHE_S3_USE_SSL) -e SCCACHE_S3_KEY_PREFIX=$(SCCACHE_S3_KEY_PREFIX) -e SCCACHE_ENDPOINT=$(SCCACHE_ENDPOINT) -e SCCACHE_BUCKET=$(SCCACHE_BUCKET) -e AWS_SECRET_ACCESS_KEY=$(AWS_SECRET_ACCESS_KEY) -e AWS_ACCESS_KEY_ID=$(AWS_ACCESS_KEY_ID) -v $(PWD):/app uthng/cross:amd64-debian cargo clippy --workspace --target x86_64-unknown-linux-gnu
-	cargo clippy --workspace --target x86_64-unknown-linux-gnu
+	cargo clippy --workspace
 
-.PHONY: clippy-linux
+.PHONY: clippy
 
 deps:
 	@echo "Install cross..."
@@ -85,7 +84,9 @@ deps:
 .PHONY: deps
 
 tests: docker-start
-	cargo test --workspace --target x86_64-unknown-linux-gnu -- --show-output
+	cargo build --workspace
+	ls target/*
+	cargo test --workspace -- --show-output
 	make docker-stop
 
 .PHONY: tests
@@ -104,8 +105,7 @@ archive-%:
 
 .PHONY: archive-%
 
-archive-linux:
-	make $(ARCHIVE_LINUX_TARGETS)
+archive-linux: $(ARCHIVE_LINUX_TARGETS)
 
 docker-build:
 	@echo "Building the docker image..."

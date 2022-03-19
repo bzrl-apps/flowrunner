@@ -75,7 +75,7 @@ config.plugins.push(
     {
       "assets": [
         {"path": "dist/flowrunner-*-x86_64-unknown-linux-gnu.tar.gz", "label": "flowrunner-${nextRelease.version}-x84_64-unknown-linux-gnu"},
-        {"path": "dist/flowrunner-*-x86_64-apple-darwin.tar.gz", "label": "flowrunner-${nextRelease.version}-x86_64-apple-darwin4"},
+        {"path": "dist/flowrunner-*-aarch64-unknown-linux-gnu.tar.gz", "label": "flowrunner-${nextRelease.version}-aarch64-unknown-linux-gnu"},
       ]
     }
   ],
