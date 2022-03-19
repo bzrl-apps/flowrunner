@@ -60,7 +60,7 @@ jobs:
         #run: make test-integration
         #
       - name: Build multiple platforms
-        run: make build
+        run: make build-linux
 
       - name: Archive generated binaries
         uses: actions/upload-artifact@v2

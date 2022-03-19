@@ -10,5 +10,5 @@ if [[ "$GITHUB_REF" == 'refs/heads/master' || "$GITHUB_REF" == 'refs/heads/next'
   echo "[RELEASE] Building docker images for different architectures"
   make docker-build VERSION="${RELEASE_VERSION}"
   echo "[RELEASE] Creating archives for different architectures"
-  make archives RELEASE_VERSION="${RELEASE_VERSION}"
+  make archive-linux RELEASE_VERSION="${RELEASE_VERSION}"
 fi

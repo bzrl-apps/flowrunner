@@ -27,8 +27,9 @@ export SCCACHE_S3_USE_SSL = true
 # Compilation variables
 PROJECT_BUILD_SRCS = $(shell git ls-files '*.rs')
 PROJECT_BUILD_BIN = flowrunner
-PROJECT_BUILD_TARGETS = x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin
 PROJECT_ARTIFACTS = target/artifacts
+
+PROJECT_BUILD_LINUX_TARGETS = x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
 
 # Docker image
 DOCKER_REPO ?= docker.io/uthng
@@ -38,18 +39,18 @@ DOCKER_IMAGE_TAG ?= latest
 EMPTY:=
 SPACE:= ${EMPTY} ${EMPTY}
 
-CROSS_TARGETS := $(foreach t,$(PROJECT_BUILD_TARGETS),cross-build-$(t))
-ARCHIVE_TARGETS := $(foreach t,$(PROJECT_BUILD_TARGETS),archive-$(t))
+CROSS_LINUX_TARGETS := $(foreach t,$(PROJECT_BUILD_LINUX_TARGETS),cross-build-$(t))
+ARCHIVE_LINUX_TARGETS := $(foreach t,$(PROJECT_BUILD_LINUX_TARGETS),archive-$(t))
 
 all: clean build
 
 .PHONY: all
 
-build: export CARGO_HOME ?= $(CARGO_HOME)
-build:
-	make $(CROSS_TARGETS)
+#build: export CARGO_HOME ?= $(CARGO_HOME)
+build-linux:
+	make $(CROSS_LINUX_TARGETS)
 
-.PHONY: build
+.PHONY: build-linux
 
 # Cross command targets multiple platforms
 # cross-build, cross-test => cross build or cross test
@@ -101,8 +102,8 @@ archive-%:
 
 .PHONY: archive-%
 
-archives:
-	make $(ARCHIVE_TARGETS)
+archive-linux:
+	make $(ARCHIVE_LINUX_TARGETS)
 
 docker-build:
 	@echo "Building the docker image..."
