@@ -163,7 +163,7 @@ impl Plugin for Uri {
         let mut result = PluginExecResult::default();
 
         let rt = Runtime::new().unwrap();
-        let _guard = rt.enter();
+        //let _guard = rt.enter();
 
         let client = reqwest::Client::new();
 
@@ -181,80 +181,81 @@ impl Plugin for Uri {
         }
 
         // Execute request
-        match req_builder.send().await {
-            Ok(r) => {
-                let status = r.status();
+        rt.block_on(async {
+            match req_builder.send().await {
+                Ok(r) => {
+                    let status = r.status();
 
-                if self.status_codes.is_empty() || self.status_codes.contains(&status) {
-                    result.status = Status::Ok;
-                } else {
-                    result.status = Status::Ko;
-                }
-
-                // Prepare output
-                result.output.insert("status_code".to_string(), Value::Number(Number::from(status.as_u16())));
-
-                // Handler response's header
-                if self.include_resp_headers {
-                    let mut headers: Map<String, Value> = Map::new();
-                    for (k, v) in r.headers().iter() {
-                        headers.insert(k.as_str().to_string(), Value::String(v.to_str().unwrap_or("N/A").to_string()));
-                    }
-
-                    result.output.insert("headers".to_string(), Value::Object(headers));
-                }
-
-                // Handle content-length
-                if self.include_resp_content_length {
-                    result.output.insert("content_length".to_string(), Value::Number(Number::from(r.content_length().unwrap_or(0))));
-                }
-
-                // Handle url
-                if self.include_resp_url {
-                    result.output.insert("url".to_string(), Value::String(r.url().as_str().to_string()));
-                }
-
-                // Handle SocketAddr
-                if self.include_resp_remote_addr {
-                    let remote_addr = match r.remote_addr() {
-                        Some(ip) => ip.to_string(),
-                        None => "N/A".to_string(),
-                    };
-
-                    result.output.insert("remote_addr".to_string(), Value::String(remote_addr));
-                }
-
-                // Handle cookies
-                if self.include_resp_cookies {
-                    let mut cookies: Map<String, Value> = Map::new();
-                    for cookie in r.cookies() {
-                        cookies.insert(cookie.name().to_string(), serde_json::from_str(cookie.value()).unwrap_or(Value::Null));
-                    }
-
-                    result.output.insert("cookies".to_string(), Value::Object(cookies));
-                }
-
-                // Handle body text
-                match r.text().await {
-                    Ok(t) => { result.output.insert("content".to_string(), serde_json::from_str(t.as_str()).unwrap_or(Value::Null)); },
-                    Err(e) => {
+                    if self.status_codes.is_empty() || self.status_codes.contains(&status) {
+                        result.status = Status::Ok;
+                    } else {
                         result.status = Status::Ko;
-                        result.error = e.to_string();
+                    }
 
-                        return result;
-                    },
-                }
+                    // Prepare output
+                    result.output.insert("status_code".to_string(), Value::Number(Number::from(status.as_u16())));
 
-                return result;
+                    // Handler response's header
+                    if self.include_resp_headers {
+                        let mut headers: Map<String, Value> = Map::new();
+                        for (k, v) in r.headers().iter() {
+                            headers.insert(k.as_str().to_string(), Value::String(v.to_str().unwrap_or("N/A").to_string()));
+                        }
 
-            },
-            Err(e) => {
-                result.status = Status::Ko;
-                result.error = e.to_string();
+                        result.output.insert("headers".to_string(), Value::Object(headers));
+                    }
 
-                return result;
-            },
-        }
+                    // Handle content-length
+                    if self.include_resp_content_length {
+                        result.output.insert("content_length".to_string(), Value::Number(Number::from(r.content_length().unwrap_or(0))));
+                    }
+
+                    // Handle url
+                    if self.include_resp_url {
+                        result.output.insert("url".to_string(), Value::String(r.url().as_str().to_string()));
+                    }
+
+                    // Handle SocketAddr
+                    if self.include_resp_remote_addr {
+                        let remote_addr = match r.remote_addr() {
+                            Some(ip) => ip.to_string(),
+                            None => "N/A".to_string(),
+                        };
+
+                        result.output.insert("remote_addr".to_string(), Value::String(remote_addr));
+                    }
+
+                    // Handle cookies
+                    if self.include_resp_cookies {
+                        let mut cookies: Map<String, Value> = Map::new();
+                        for cookie in r.cookies() {
+                            cookies.insert(cookie.name().to_string(), serde_json::from_str(cookie.value()).unwrap_or(Value::Null));
+                        }
+
+                        result.output.insert("cookies".to_string(), Value::Object(cookies));
+                    }
+
+                    // Handle body text
+                    match r.text().await {
+                        Ok(t) => { result.output.insert("content".to_string(), serde_json::from_str(t.as_str()).unwrap_or(Value::Null)); },
+                        Err(e) => {
+                            result.status = Status::Ko;
+                            result.error = e.to_string();
+
+                            return result;
+                        },
+                    }
+
+                    result
+                },
+                Err(e) => {
+                    result.status = Status::Ko;
+                    result.error = e.to_string();
+
+                    result
+                },
+            }
+        })
     }
 }
 
