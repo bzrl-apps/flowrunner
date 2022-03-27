@@ -71,7 +71,6 @@ impl Plugin for KafkaProducer {
     fn validate_params(&mut self, params: Map<String, Value>) -> Result<()> {
         let jops_params = JsonOps::new(Value::Object(params));
 
-        warn!("kafka client: {:#?}", self);
         match jops_params.get_value_e::<Vec<String>>("brokers") {
             Ok(b) => self.brokers = b,
             Err(e) => { return Err(anyhow!(e)); },
@@ -82,7 +81,6 @@ impl Plugin for KafkaProducer {
             Err(_) => self.options = Map::new(),
         };
 
-        warn!("kafka client: {:#?}", self);
         match jops_params.get_value_e::<Vec<KafkaMessage>>("messages") {
             Ok(m) => {
                 for m in m.iter() {
@@ -101,7 +99,6 @@ impl Plugin for KafkaProducer {
             Err(_) => self.log_level = "info".to_string(),
         };
 
-        warn!("kafka client: {:#?}", self);
         Ok(())
     }
 

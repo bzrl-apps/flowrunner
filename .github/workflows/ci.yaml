@@ -111,7 +111,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: flowrunner-target
-          path: ./target
+          path: |
+            target/x86_64-apple-darwin/release
+            target/x86_64-unknown-linux-gnu/release
+            target/aarch64-unknown-linux-gnu/release
 
       - name: View current directory
         run: ls -lR
@@ -157,7 +160,10 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: flowrunner-target
-          path: ./target
+          path: |
+            target/x86_64-apple-darwin/release
+            target/x86_64-unknown-linux-gnu/release
+            target/aarch64-unknown-linux-gnu/release
 
       - name: View current directory
         run: ls -lR
