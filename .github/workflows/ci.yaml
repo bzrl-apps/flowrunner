@@ -63,9 +63,10 @@ jobs:
       - name: debug env
         run: env
 
-      #- name: Check linters
-        #run: |
+      - name: Check linters
+        run: |
           #make clippy
+          cargo clippy --workspace
 
       #- name: Launch unit tests
         #run: make tests
@@ -75,7 +76,6 @@ jobs:
         #
       - name: Build multiple platforms
         run: |
-          #export RUSTC_WRAPPER=
           env
           make build-linux
 
@@ -84,10 +84,11 @@ jobs:
         with:
           name: flowrunner-target
           path: |
-            target/x86_64-apple-darwin/release
-            target/x86_64-unknown-linux-gnu/release
-            target/aarch64-unknown-linux-gnu/release
-          retention-days: 1
+            target/x86_64-unknown-linux-gnu/release/flowrunner
+            target/x86_64-unknown-linux-gnu/release/*.so
+            target/aarch64-unknown-linux-gnu/release/flowrunner
+            target/aarch64-unknown-linux-gnu/release/*.so
+          retention-days: 7
 
 
   prerelease:
@@ -112,9 +113,10 @@ jobs:
         with:
           name: flowrunner-target
           path: |
-            target/x86_64-apple-darwin/release
-            target/x86_64-unknown-linux-gnu/release
-            target/aarch64-unknown-linux-gnu/release
+            target/x86_64-unknown-linux-gnu/release/flowrunner
+            target/x86_64-unknown-linux-gnu/release/*.so
+            target/aarch64-unknown-linux-gnu/release/flowrunner
+            target/aarch64-unknown-linux-gnu/release/*.so
 
       - name: View current directory
         run: ls -lR
@@ -161,12 +163,16 @@ jobs:
         with:
           name: flowrunner-target
           path: |
-            target/x86_64-apple-darwin/release
-            target/x86_64-unknown-linux-gnu/release
-            target/aarch64-unknown-linux-gnu/release
+            target/x86_64-unknown-linux-gnu/release/flowrunner
+            target/x86_64-unknown-linux-gnu/release/*.so
+            target/aarch64-unknown-linux-gnu/release/flowrunner
+            target/aarch64-unknown-linux-gnu/release/*.so
 
       - name: View current directory
-        run: ls -lR
+        run: |
+          ls -la
+          ls -lR target/x86_64-unknown-linux-gnu
+          ls -lR target/aarch64-unknown-linux-gnu
 
       - name: Fetch tags
         run: |
