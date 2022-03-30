@@ -20,6 +20,7 @@ use async_channel::{Sender, Receiver};
 use tokio::runtime::Runtime;
 use async_trait::async_trait;
 
+use evalexpr::*;
 use log::*;
 
 use rdkafka::{
@@ -44,6 +45,7 @@ fn default_loglevel() -> String {
 #[derive(Default, Debug ,Serialize, Deserialize, Clone)]
 struct KafkaMessage {
     topic: String,
+    r#if: Option<String>,
     key: String,
     message: String,
 }
@@ -142,30 +144,34 @@ impl Plugin for KafkaProducer {
 
 
         for msg in self.messages.clone().iter() {
-            info!("Sending message {:?}", msg);
+            let r#if = msg.r#if.clone().unwrap_or("true".to_string());
 
-            let mut fr = FutureRecord::to(msg.topic.as_str())
-                    .payload(msg.message.as_bytes());
+            if eval_boolean(r#if.as_str()).unwrap_or(false) {
+                info!("Sending message {:?}", msg);
 
-            if !msg.key.is_empty() {
-                   fr =  fr.key(msg.key.as_bytes());
+                let mut fr = FutureRecord::to(msg.topic.as_str())
+                        .payload(msg.message.as_bytes());
+
+                if !msg.key.is_empty() {
+                    fr =  fr.key(msg.key.as_bytes());
+                }
+
+                let produce_future = producer.send(
+                    fr,
+                    //.headers(OwnedHeaders::new().add("header_key", "header_value")),
+                    Duration::from_secs(0),
+                );
+
+                match produce_future.await {
+                    Ok(delivery) => {
+                        debug!("Kafka producer sent delivery status: {:?}", delivery);
+                    }
+                    Err((e, _)) => {
+                        error!("Kafka producer sent error: {:?}", e);
+                        return_plugin_exec_result_err!(result, e.to_string());
+                    }
+                };
             }
-
-            let produce_future = producer.send(
-                fr,
-                //.headers(OwnedHeaders::new().add("header_key", "header_value")),
-                Duration::from_secs(0),
-            );
-
-            match produce_future.await {
-                Ok(delivery) => {
-                    debug!("Kafka producer sent delivery status: {:?}", delivery);
-                }
-                Err((e, _)) => {
-                    error!("Kafka producer sent error: {:?}", e);
-                    return_plugin_exec_result_err!(result, e.to_string());
-                }
-            };
         }
 
         result.status = Status::Ok;

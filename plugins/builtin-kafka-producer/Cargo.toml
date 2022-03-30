@@ -29,5 +29,8 @@ serde_json = "1.0"
 # Kafka
 rdkafka = { version = "0.28", features = ["default", "cmake-build", "ssl"] }
 
+# Eval
+evalexpr = "7"
+
 [lib]
 crate-type = ["dylib"]
