@@ -21,6 +21,7 @@ use async_trait::async_trait;
 
 use sqlx::postgres::{PgPoolOptions, PgRow};
 use sqlx::{Row, FromRow, Column, TypeInfo};
+use sqlx::types::Json;
 
 use chrono::{DateTime, Utc, NaiveDate, NaiveDateTime, NaiveTime};
 #[allow(unused_imports)]
@@ -282,7 +283,12 @@ macro_rules! bind_query {
                             $qry = $qry.bind(val);
                         },
                         "json" | "jsonb" => {
-                            $qry = $qry.bind(s);
+                            let val = match serde_json::from_str::<Value>(s) {
+                                Ok(v) => Some(Json(v)),
+                                Err(_) => None,
+                            };
+
+                            $qry = $qry.bind(val);
                         },
                         _ => {
                             $qry = $qry.bind(s);
@@ -442,102 +448,105 @@ impl Plugin for Pgql {
        let _ =  env_logger::try_init();
 
         let rt = Runtime::new().unwrap();
-        let _guard = rt.enter();
+        //let _guard = rt.enter();
 
         let mut result = PluginExecResult::default();
 
-        let pool = match PgPoolOptions::new()
-            .max_connections(self.max_conn)
-            .connect(&self.conn_str).await {
-            Ok(p) => p,
-            Err(e) => {
-                return_plugin_exec_result_err!(result, e.to_string());
-            },
-        };
+        rt.block_on(async {
+            let pool = match PgPoolOptions::new()
+                .max_connections(self.max_conn)
+                .connect(&self.conn_str).await {
+                Ok(p) => p,
+                Err(e) => {
+                    return_plugin_exec_result_err!(result, e.to_string());
+                },
+            };
 
-        let mut transaction = match pool.begin().await {
-            Ok(tx) => tx,
-            Err(e) => { return_plugin_exec_result_err!(result, e.to_string()); },
-        };
+            let mut transaction = match pool.begin().await {
+                Ok(tx) => tx,
+                Err(e) => { return_plugin_exec_result_err!(result, e.to_string()); },
+            };
 
-        for (idx, st) in self.stmts.iter().enumerate() {
-            let cond = st.cond.clone();
+            for (idx, st) in self.stmts.iter().enumerate() {
+                let cond = st.cond.clone();
 
-            if eval_boolean(cond.as_str()).unwrap_or(false) {
-                let stmt = st.stmt.as_str();
-                // Parse query
-                let qry_type = sql_parser(stmt);
+                if eval_boolean(cond.as_str()).unwrap_or(false) {
+                    let stmt = st.stmt.as_str();
+                    // Parse query
+                    let qry_type = sql_parser(stmt);
 
-                if qry_type.as_str() == "query" {
-                    let mut qry = sqlx::query_as::<_, PgqlRow>(<&str>::clone(&stmt));
+                    if qry_type.as_str() == "query" {
+                        let mut qry = sqlx::query_as::<_, PgqlRow>(<&str>::clone(&stmt));
 
-                    for p in st.params.iter() {
-                        bind_query!(qry, p, result);
-                    }
-
-                    debug!("Executing query: {}", stmt);
-
-                    // Fetch data according to fetch type
-                    let res = match st.fetch.as_str() {
-                        "one" => {
-                            match qry.fetch_one(&mut transaction).await {
-                                Ok(row) => Ok(Value::Array(vec![Value::Object(row.columns)])),
-                                Err(e) => Err(e),
-                            }
-                        },
-                        _ => {
-                            match qry.fetch_all(&mut transaction).await {
-                                Ok(rows) => {
-                                    let mut rs: Vec<Value> = Vec::new();
-                                    for r in rows.into_iter() {
-                                        rs.push(Value::Object(r.columns));
-                                    }
-
-                                    Ok(Value::Array(rs))
-                                },
-                                Err(e) => Err(e),
-                            }
-                        },
-                    };
-
-                    match res {
-                        Ok(rows) => {
-                            result.output.insert(idx.to_string(), rows);
-                        },
-                        Err(e) => {
-                            let _ = transaction.rollback().await;
-
-                            return_plugin_exec_result_err!(result, e.to_string());
-                        },
-                    };
-                } else { // statement = execute
-                    let mut qry = sqlx::query(<&str>::clone(&stmt));
-
-                    for p in st.params.iter() {
-                        bind_query!(qry, p, result);
-                    }
-
-                    debug!("Executing statement: {}", stmt);
-
-                    match qry.execute(&mut transaction).await {
-                        Ok(res) => {
-                            result.output.insert(idx.to_string(), Value::Number(Number::from(res.rows_affected())));
-                        },
-                        Err(e) => {
-                            let _ = transaction.rollback().await.unwrap();
-
-                            return_plugin_exec_result_err!(result, e.to_string());
+                        for p in st.params.iter() {
+                            bind_query!(qry, p, result);
                         }
-                    };
+
+                        debug!("Executing query: {}", stmt);
+
+                        // Fetch data according to fetch type
+                        let res = match st.fetch.as_str() {
+                            "one" => {
+                                match qry.fetch_one(&mut transaction).await {
+                                    Ok(row) => Ok(Value::Array(vec![Value::Object(row.columns)])),
+                                    Err(e) => Err(e),
+                                }
+                            },
+                            _ => {
+                                match qry.fetch_all(&mut transaction).await {
+                                    Ok(rows) => {
+                                        let mut rs: Vec<Value> = Vec::new();
+                                        for r in rows.into_iter() {
+                                            rs.push(Value::Object(r.columns));
+                                        }
+
+                                        Ok(Value::Array(rs))
+                                    },
+                                    Err(e) => Err(e),
+                                }
+                            },
+                        };
+
+                        match res {
+                            Ok(rows) => {
+                                result.output.insert(idx.to_string(), rows);
+                            },
+                            Err(e) => {
+                                let _ = transaction.rollback().await;
+
+                                return_plugin_exec_result_err!(result, e.to_string());
+                            },
+                        };
+                    } else { // statement = execute
+                        let mut qry = sqlx::query(<&str>::clone(&stmt));
+
+                        for p in st.params.iter() {
+                            bind_query!(qry, p, result);
+                        }
+
+                        debug!("Executing statement: {}", stmt);
+
+                        match qry.execute(&mut transaction).await {
+                            Ok(res) => {
+                                result.output.insert(idx.to_string(), Value::Number(Number::from(res.rows_affected())));
+                            },
+                            Err(e) => {
+                                let _ = transaction.rollback().await.unwrap();
+
+                                return_plugin_exec_result_err!(result, e.to_string());
+                            }
+                        };
+                    }
                 }
             }
-        }
 
-        let _ = transaction.commit().await;
+            let _ = transaction.commit().await;
 
-        result.status = Status::Ok;
+            result.status = Status::Ok;
 
-        result
+            result
+
+        })
     }
 }
 
