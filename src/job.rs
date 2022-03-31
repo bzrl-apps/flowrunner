@@ -336,7 +336,7 @@ impl Job {
             match eval_boolean(&txt) {
                 Ok(b) => {
                     if !b {
-                        debug!("{}", format!("task ignored: {}, if: {:?}, eval: {:?}", component, txt, b));
+                        info!("{}", format!("task ignored: {}, if: {:?}, eval: {:?}", component, txt, b));
                         return Ok(vec_params);
                     }
                 },
@@ -395,7 +395,7 @@ impl Job {
             match eval_boolean(&txt) {
                 Ok(b) => {
                     if !b {
-                        debug!("{}", format!("job ignored: {}, if: {:?}, eval: {:?}", component, txt, b));
+                        info!("{}", format!("job ignored: {}, if: {:?}, eval: {:?}", component, txt, b));
                         return Ok(false);
                     }
 
