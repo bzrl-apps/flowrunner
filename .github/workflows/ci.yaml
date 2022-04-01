@@ -28,6 +28,7 @@ jobs:
   check_test:
     name: Check & test
     runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.head_commit.message, '[skip-check]') }}
     steps:
       - uses: actions/checkout@v2
         with:
@@ -72,8 +73,9 @@ jobs:
         #
 
   build:
-    needs: [check_test]
+    #needs: [check_test]
     runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.head_commit.message, '[skip-build]') }}
     steps:
       - uses: actions/checkout@v2
         with:
@@ -127,7 +129,7 @@ jobs:
     needs: [build]
     name: Pre-release
     runs-on: ubuntu-latest
-    if: ${{ github.ref == 'refs/heads/next' }}
+    if: ${{ github.ref == 'refs/heads/next' && !contains(github.event.head_commit.message, '[skip-prerelease]') }}
     steps:
       - name: Display variables & commit message
         run: |
@@ -144,6 +146,7 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: flowrunner-target
+          path: target
 
       - name: View current directory
         run: ls -lR
@@ -172,7 +175,7 @@ jobs:
     needs: [build]
     name: Release
     runs-on: ubuntu-latest
-    if: ${{ github.ref == 'refs/heads/master' }}
+    if: ${{ github.ref == 'refs/heads/master' && !contains(github.event.head_commit.message, '[skip-release]') }}
     steps:
       - name: Display variables & commit message
         run: |
@@ -189,6 +192,7 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: flowrunner-target
+          path: target
 
       - name: View current directory
         run: |

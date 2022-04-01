@@ -105,7 +105,7 @@ archive-%:
 
 .PHONY: archive-%
 
-archive-linux: $(ARCHIVE_LINUX_TARGETS)
+archives-linux: $(ARCHIVE_LINUX_TARGETS)
 
 docker-build:
 	@echo "Building the docker image..."
