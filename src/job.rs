@@ -94,6 +94,10 @@ impl Job {
 
         if !self.tx.is_empty() {
             loop {
+                // Reinit the current keys added when receiving each message
+                debug!("Reinitialize job's result: {}", self.name);
+                self.result.clear();
+
                 match self.tx[0].recv().await {
                     // Add message received as data in job context
                     Ok(msg) => {
