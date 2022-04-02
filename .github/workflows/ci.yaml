@@ -142,6 +142,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Install QEMU & eveything to use buildx for multiple platforms
+      # https://github.com/docker/setup-qemu-action
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+      # https://github.com/docker/setup-buildx-action
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
       - name: Download generated binaries
         uses: actions/download-artifact@v2
         with:
@@ -169,6 +177,7 @@ jobs:
       - name: Next release
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          PLATFORM: linux/amd64,linux/arm64
         run: npx -p conventional-changelog-conventionalcommits -p @semantic-release/changelog -p @semantic-release/git -p @semantic-release/exec -p @semantic-release/github -p semantic-release semantic-release
 
   release:
@@ -187,6 +196,14 @@ jobs:
         uses: actions/checkout@v2
         with:
           fetch-depth: 0
+
+      # Install QEMU & eveything to use buildx for multiple platforms
+      # https://github.com/docker/setup-qemu-action
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+      # https://github.com/docker/setup-buildx-action
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
 
       - name: Download generated binaries
         uses: actions/download-artifact@v2
@@ -218,6 +235,7 @@ jobs:
       - name: Master release
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          PLATFORM: linux/amd64,linux/arm64
         run: npx -p conventional-changelog-conventionalcommits -p @semantic-release/changelog -p @semantic-release/git -p @semantic-release/exec -p @semantic-release/github -p semantic-release semantic-release
 
       #- name: Update back next

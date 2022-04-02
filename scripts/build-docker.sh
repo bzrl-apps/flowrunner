@@ -13,7 +13,7 @@ set -x
 VERSION="${VERSION:-"latest"}"
 DATE="${DATE:-"$(date -u +%Y-%m-%d)"}"
 # PLATFORM for Buildx: linux/arm64 or linux/amd64
-PLATFORM="${PLATFORM:-"linux/amd64 linux/arm64"}"
+PLATFORM="${PLATFORM:-"linux/amd64,linux/arm64"}"
 PUSH="${PUSH:-"true"}"
 REPO="${REPO:-"bazarlab/flowrunner"}"
 DIR_ARTIFACTS="target/artifacts"
@@ -35,14 +35,12 @@ build() {
             ARGS="${ARGS} --push"
         fi
 
-        for PF in ${PLATFORM}; do
-            docker buildx build \
-                --platform="${PF}" \
-                --tag "$TAG" \
-                ${DIR_ARTIFACTS} \
-                -f "$DOCKERFILE" \
-                ${ARGS}
-        done
+        docker buildx build \
+            --platform="${PLATFORM}" \
+            --tag "$TAG" \
+            ${DIR_ARTIFACTS} \
+            -f "$DOCKERFILE" \
+            ${ARGS}
     else
         docker build \
             --tag "$TAG" \
