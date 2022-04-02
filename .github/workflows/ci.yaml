@@ -9,7 +9,7 @@ on:
 
 env:
   GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
-  PLEZI_PAT: ${{secrets.PLEZI_PAT}}
+  DOCKERHUB_SECRET: ${{secrets.DOCKERHUB}}
   CI_USER_NAME: ci
   CI_USER_EMAIL: ci@uthng.me
   DOCKER_BUILDKIT: 1
@@ -123,7 +123,7 @@ jobs:
             target/x86_64-unknown-linux-gnu/release/*.so
             target/aarch64-unknown-linux-gnu/release/flowrunner
             target/aarch64-unknown-linux-gnu/release/*.so
-          retention-days: 7
+          retention-days: 1
 
   prerelease:
     needs: [build]
