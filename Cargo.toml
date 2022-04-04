@@ -38,6 +38,7 @@ members = [
   "plugins/builtin-datastore",
   "plugins/builtin-webhook",
   "plugins/builtin-pgql-tokio"
+  "plugins/builtin-httpserver"
 ]
 
 #[lib]

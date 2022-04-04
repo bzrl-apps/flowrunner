@@ -288,6 +288,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "builtin-httpserver"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "async-trait",
+ "axum",
+ "env_logger 0.8.4",
+ "flowrunner",
+ "json_ops",
+ "log",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "builtin-json-patch"
 version = "0.1.0"
 dependencies = [
