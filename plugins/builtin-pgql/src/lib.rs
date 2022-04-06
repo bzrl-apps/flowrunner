@@ -44,9 +44,9 @@ struct Pgql {
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
 struct Stmt {
     stmt: String,
-    cond: String,
+    cond: Option<String>,
     params: Vec<StmtParam>,
-    fetch: String
+    fetch: Option<String>
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
@@ -469,6 +469,7 @@ impl Plugin for Pgql {
             };
 
             if self.deallocate_pp_stmt {
+                info!("DEALLOCATE all;");
                 let _ = pool.execute("DEALLOCATE all;").await;
             }
 
@@ -478,7 +479,8 @@ impl Plugin for Pgql {
             };
 
             for (idx, st) in self.stmts.iter().enumerate() {
-                let cond = st.cond.clone();
+                let mut cond = st.cond.clone().unwrap_or("true".to_string());
+                cond = if cond.is_empty() { "true".to_string() } else { cond };
 
                 if eval_boolean(cond.as_str()).unwrap_or(false) {
                     let stmt = st.stmt.as_str();
@@ -498,7 +500,8 @@ impl Plugin for Pgql {
                         debug!("Executing query: {}", stmt);
 
                         // Fetch data according to fetch type
-                        let res = match st.fetch.as_str() {
+                        let fetch = st.fetch.clone().unwrap_or("all".to_string());
+                        let res = match fetch.as_str() {
                             "one" => {
                                 match qry.fetch_one(&mut transaction).await {
                                     Ok(row) => {
@@ -562,6 +565,7 @@ impl Plugin for Pgql {
             let _ = transaction.commit().await;
 
             if self.deallocate_pp_stmt {
+                info!("DEALLOCATE all;");
                 let _ = pool.execute("DEALLOCATE all;").await;
             }
 
