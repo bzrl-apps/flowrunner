@@ -16,6 +16,8 @@ RUN mkdir -p /app/plugins
 COPY --from=builder /app/flowrunner /app/flowrunner
 COPY --from=builder /app/*.so /app/plugins/
 
+RUN chmod +x /app/flowrunner
+
 WORKDIR /app
 VOLUME /app/flows/
 
