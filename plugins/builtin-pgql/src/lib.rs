@@ -20,7 +20,7 @@ use tokio::runtime::Runtime;
 use async_trait::async_trait;
 
 use sqlx::postgres::{PgPoolOptions, PgRow};
-use sqlx::{Row, FromRow, Column, TypeInfo};
+use sqlx::{Row, FromRow, Column, TypeInfo, Executor};
 use sqlx::types::Json;
 
 use chrono::{DateTime, Utc, NaiveDate, NaiveDateTime, NaiveTime};
@@ -30,7 +30,7 @@ use std::str::FromStr;
 use evalexpr::*;
 use regex::Regex;
 
-use log::debug;
+use log::*;
 
 // Our plugin implementation
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
@@ -38,6 +38,7 @@ struct Pgql {
     conn_str: String,
     max_conn: u32,
     stmts: Vec<Stmt>,
+    deallocate_pp_stmt: bool,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
@@ -412,18 +413,23 @@ impl Plugin for Pgql {
             },
         };
 
-        // Check Method
+        // Check max connection pool
         match jops_params.get_value_e::<u32>("max_conn") {
             Ok(u) => self.max_conn = u,
-            Err(_) => self.max_conn = 5,
+            Err(_) => self.max_conn = 3,
         };
 
-        // Check Headers (optional)
+        // Check statements (optional)
         match jops_params.get_value_e::<Vec<Stmt>>("stmts") {
             Ok(stmts) => self.stmts = stmts,
             Err(e) => {
                 return Err(anyhow!(e));
             },
+        };
+
+        match jops_params.get_value_e::<bool>("deallocate_pp_stmt") {
+            Ok(v) => self.deallocate_pp_stmt = v,
+            Err(_) => self.deallocate_pp_stmt = false,
         };
 
         Ok(())
@@ -462,7 +468,11 @@ impl Plugin for Pgql {
                 },
             };
 
-            let mut transaction = match pool.begin().await {
+            if self.deallocate_pp_stmt {
+                let _ = pool.execute("DEALLOCATE all;").await;
+            }
+
+            let mut transaction = match pool.clone().begin().await {
                 Ok(tx) => tx,
                 Err(e) => { return_plugin_exec_result_err!(result, e.to_string()); },
             };
@@ -477,6 +487,9 @@ impl Plugin for Pgql {
 
                     if qry_type.as_str() == "query" {
                         let mut qry = sqlx::query_as::<_, PgqlRow>(<&str>::clone(&stmt));
+                        //let mut qry = sqlx::query(<&str>::clone(&stmt));
+
+                        //qry = qry.persistent(false);
 
                         for p in st.params.iter() {
                             bind_query!(qry, p, result);
@@ -488,7 +501,10 @@ impl Plugin for Pgql {
                         let res = match st.fetch.as_str() {
                             "one" => {
                                 match qry.fetch_one(&mut transaction).await {
-                                    Ok(row) => Ok(Value::Array(vec![Value::Object(row.columns)])),
+                                    Ok(row) => {
+                                        //let r = convert_to_pgqlrow(&row).unwrap();
+                                        Ok(Value::Array(vec![Value::Object(row.columns)]))
+                                    },
                                     Err(e) => Err(e),
                                 }
                             },
@@ -497,6 +513,7 @@ impl Plugin for Pgql {
                                     Ok(rows) => {
                                         let mut rs: Vec<Value> = Vec::new();
                                         for r in rows.into_iter() {
+                                            //let r1 = convert_to_pgqlrow(&r).unwrap();
                                             rs.push(Value::Object(r.columns));
                                         }
 
@@ -520,6 +537,8 @@ impl Plugin for Pgql {
                     } else { // statement = execute
                         let mut qry = sqlx::query(<&str>::clone(&stmt));
 
+                        //qry = qry.persistent(false);
+
                         for p in st.params.iter() {
                             bind_query!(qry, p, result);
                         }
@@ -541,6 +560,10 @@ impl Plugin for Pgql {
             }
 
             let _ = transaction.commit().await;
+
+            if self.deallocate_pp_stmt {
+                let _ = pool.execute("DEALLOCATE all;").await;
+            }
 
             result.status = Status::Ok;
 
