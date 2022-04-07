@@ -23,7 +23,7 @@ use log::debug;
 // Our plugin implementation
 #[derive(Default, Debug ,Serialize, Deserialize, Clone)]
 struct JsonPatch {
-    target: Value,
+    target: String,
     patch: Vec<Op>,
 }
 
@@ -58,7 +58,7 @@ impl Plugin for JsonPatch {
         let jops_params = JsonOps::new(Value::Object(params));
 
         // Check Target
-        match jops_params.get_value_e::<Value>("target") {
+        match jops_params.get_value_e::<String>("target") {
             Ok(v) => self.target = v,
             Err(e) => {
                 return Err(anyhow!(e));
@@ -111,7 +111,12 @@ impl Plugin for JsonPatch {
 
         let mut result = PluginExecResult::default();
 
-        let mut json_ops = JsonOps::new(self.target.clone());
+        let v_target: Value = match serde_json::from_str(&self.target) {
+            Ok(v) => v,
+            Err(e) => return_plugin_exec_result_err!(result, e.to_string()),
+        };
+
+        let mut json_ops = JsonOps::new(v_target);
 
         for (idx, op) in self.patch.iter().enumerate() {
             if op.action == "replace" {

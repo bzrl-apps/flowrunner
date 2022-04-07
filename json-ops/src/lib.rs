@@ -95,8 +95,10 @@ impl JsonOps {
     /// value is a simple type such as number, bool or string, it will replace if both values are
     /// the same type. Otherwise, it will process recursively.
     pub fn set_value_by_path(&mut self, path: &str, value: Value) -> Result<()> {
-        let value_type = get_value_type(&value);
+        let mut value_type = get_value_type(&value);
         let self_value_type = get_value_type(&self.value);
+
+        debug!("set_value_by_path: path: {}, value: {:?}, value_type: {:?}, self: {:?}, self_value_type: {:?}", path, value, value_type, self, self_value_type);
 
         // Check type
         if self_value_type == "object" || self_value_type == "array" {
@@ -139,6 +141,18 @@ impl JsonOps {
         if new_val_type == "number" ||
             new_val_type == "bool" ||
             new_val_type == "string" {
+                let mut v = value.clone();
+
+                // We check if value to replace is a string. If yes, we extract and deserialize
+                // again to get the right Value's type. Why ? Because in some case with template
+                // rendering, value automatically gets string instead of its real value type.
+                if value_type == "string" {
+                    let s = v.as_str().ok_or(anyhow!("Cannot extract string from the value"))?;
+                    v = serde_json::from_str(s)?;
+
+                    value_type = get_value_type(&v);
+                }
+
                 if new_val_type == value_type {
                     if idx > -1 {
                         self.value[idx as usize] = value;
@@ -169,6 +183,8 @@ impl JsonOps {
     /// will be added if it does not exist before. Otherwise, the existing field gets updated.
     pub fn add_value_by_path(&mut self, path: &str, value: Value) -> Result<()> {
         let self_value_type = get_value_type(&self.value);
+
+        debug!("add_value_by_path: path: {}, value: {:?}, self: {:?}, self_value_type: {:?}", path, value, self, self_value_type);
 
         // Check type
         if self_value_type != "object" && self_value_type != "array" {
@@ -265,6 +281,8 @@ impl JsonOps {
 
     pub fn remove_value_by_path(&mut self, path: &str) -> Result<()> {
         let self_value_type = get_value_type(&self.value);
+
+        debug!("remove_value_by_path: path: {}, self: {:?}, self_value_type: {:?}", path, self, self_value_type);
 
         // Check type
         if self_value_type != "object" && self_value_type != "array" {
