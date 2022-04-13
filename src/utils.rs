@@ -4,7 +4,7 @@ use serde_yaml::Value as yamlValue;
 
 use anyhow::{anyhow, Result};
 
-use log::debug;
+use log::*;
 
 use envmnt::{ExpandOptions, ExpansionType};
 use tera::{Tera, Context};
@@ -186,6 +186,8 @@ pub fn render_loop_template(component: &str, value: &Value, data: &Map<String, V
             match tera.render_str(s.as_str(), &context) {
                 Ok(s1) => {
                     let val: Value = serde_json::from_str(s1.as_str())?;
+
+                    debug!("render_loop_template: s: {:?},  val: {:?}", s1, val);
 
                     if val.as_array().is_none() {
                         return Err(anyhow!("Value must be an array"));

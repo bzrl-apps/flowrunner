@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Map;
-use serde_json::Value;
+use serde_json::{Map, Number, Value};
 
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
@@ -368,8 +367,9 @@ impl Job {
                 items = its.clone();
             };
 
-            for it in items.into_iter() {
+            for (idx, it) in items.into_iter().enumerate() {
                 data.insert("loop_item".to_string(), it);
+                data.insert("loop_index".to_string(), Value::Number(Number::from(idx)));
 
                 let mut params = Map::new();
 
