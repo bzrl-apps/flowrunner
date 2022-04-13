@@ -74,8 +74,8 @@ config.plugins.push(
     "@semantic-release/github",
     {
       "assets": [
-        {"path": "dist/flowrunner-*-amd64-linux.tar.gz", "label": "flowrunner-${nextRelease.version}-amd64-linux"},
-        {"path": "dist/flowrunner-*-arm64-linux.tar.gz", "label": "flowrunner-${nextRelease.version}-arm64-linux"},
+        {"path": "target/artifacts/flowrunner-*-amd64-linux.tar.gz", "label": "flowrunner-${nextRelease.version}-amd64-linux"},
+        {"path": "target/artifacts/flowrunner-*-arm64-linux.tar.gz", "label": "flowrunner-${nextRelease.version}-arm64-linux"},
       ]
     }
   ],
