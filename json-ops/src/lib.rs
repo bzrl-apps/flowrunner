@@ -153,11 +153,13 @@ impl JsonOps {
                     value_type = get_value_type(&v);
                 }
 
+                debug!("set_value_by_path: compare old & new value type: {} (old), {} (new)", new_val_type, value_type);
+
                 if new_val_type == value_type {
                     if idx > -1 {
-                        self.value[idx as usize] = value;
+                        self.value[idx as usize] = v;
                     } else {
-                        self.value[k] = value;
+                        self.value[k] = v;
                     }
 
                     return Ok(());
