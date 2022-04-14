@@ -22,6 +22,7 @@ mod message;
 mod utils;
 mod datastore;
 mod server;
+mod tera;
 
 #[tokio::main]
 async fn main() {

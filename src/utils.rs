@@ -9,6 +9,8 @@ use log::*;
 use envmnt::{ExpandOptions, ExpansionType};
 use tera::{Tera, Context};
 
+use crate::tera::generate_uuid;
+
 pub fn convert_value_yaml_to_json(v: &yamlValue) -> Result<jsonValue> {
     let mut val = jsonValue::Null;
 
@@ -91,6 +93,8 @@ pub fn render_param_template(component: &str, key: &str, value: &Value, data: &M
     debug!("Rendering param templating: component {}, key {}, value {:?}, data {:?}", component, key, value, data);
 
     let mut tera = Tera::default();
+    tera.register_function("generate_uuid", generate_uuid);
+
     let exp_env_v = expand_env_value(value);
 
     let context = match Context::from_value(Value::Object(data.to_owned())) {
@@ -133,6 +137,7 @@ pub fn render_text_template(component: &str, text: &mut String, data: &Map<Strin
     debug!("Rendering text templating: component {}, text {}, data {:?}", component, text, data);
 
     let mut tera = Tera::default();
+    tera.register_function("generate_uuid", generate_uuid);
 
     let mut options = ExpandOptions::new();
     options.expansion_type = Some(ExpansionType::UnixBracketsWithDefaults);
@@ -159,6 +164,8 @@ pub fn render_loop_template(component: &str, value: &Value, data: &Map<String, V
     debug!("Rendering loop templating: component {}, value {}, data {:?}", component, value, data);
 
     let mut tera = Tera::default();
+    tera.register_function("generate_uuid", generate_uuid);
+
     let exp_env_v = expand_env_value(value);
 
     let context = match Context::from_value(Value::Object(data.to_owned())) {

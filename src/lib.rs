@@ -10,3 +10,4 @@ pub mod source;
 pub mod sink;
 pub mod datastore;
 pub mod test;
+mod tera;
