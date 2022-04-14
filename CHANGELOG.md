@@ -1,3 +1,10 @@
+## [0.8.0](https://github.com/bzrl-apps/flowrunner/compare/v0.7.0...v0.8.0) (2022-04-14)
+
+
+### 🚀 Features
+
+* **core:** add generate_uuid() to Tera ([7c97905](https://github.com/bzrl-apps/flowrunner/commit/7c97905a2085362ccdc719340d8f842ded1c3a7a)), closes [#40](https://github.com/bzrl-apps/flowrunner/issues/40)
+
 ## [0.7.0](https://github.com/bzrl-apps/flowrunner/compare/v0.6.0...v0.7.0) (2022-04-13)
 
 
