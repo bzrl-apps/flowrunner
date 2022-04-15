@@ -1,6 +1,6 @@
 [package]
 name = "flowrunner"
-version = "0.8.0"
+version = "0.8.1"
 authors = ["Thanh NGUYEN <thanh@uthng.me>"]
 edition = "2018"
 

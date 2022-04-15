@@ -1,3 +1,10 @@
+### [0.8.1](https://github.com/bzrl-apps/flowrunner/compare/v0.8.0...v0.8.1) (2022-04-15)
+
+
+### 🐛 Bug Fixes
+
+* try to fix prepared statement issue with pgbouncer ([63c6408](https://github.com/bzrl-apps/flowrunner/commit/63c6408153cb1fe1d14beb83a9db9112b3ec9e79))
+
 ## [0.8.0](https://github.com/bzrl-apps/flowrunner/compare/v0.7.0...v0.8.0) (2022-04-14)
 
 
