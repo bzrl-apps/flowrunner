@@ -1,3 +1,10 @@
+### [0.8.2](https://github.com/bzrl-apps/flowrunner/compare/v0.8.1...v0.8.2) (2022-04-15)
+
+
+### 🐛 Bug Fixes
+
+* try to fix prepared stmt by putting deallcate before each query ([fdcf03c](https://github.com/bzrl-apps/flowrunner/commit/fdcf03cfb1136fcfa5a1aa7f21228ae677e3b4a2))
+
 ### [0.8.1](https://github.com/bzrl-apps/flowrunner/compare/v0.8.0...v0.8.1) (2022-04-15)
 
 
