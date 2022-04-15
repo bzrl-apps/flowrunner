@@ -468,11 +468,6 @@ impl Plugin for Pgql {
                 },
             };
 
-            if self.deallocate_pp_stmt {
-                info!("DEALLOCATE all;");
-                let _ = pool.execute("DEALLOCATE all;").await;
-            }
-
             let mut transaction = match pool.clone().begin().await {
                 Ok(tx) => tx,
                 Err(e) => { return_plugin_exec_result_err!(result, e.to_string()); },
@@ -495,6 +490,11 @@ impl Plugin for Pgql {
 
                         for p in st.params.iter() {
                             bind_query!(qry, p, result);
+                        }
+
+                        if self.deallocate_pp_stmt {
+                            info!("DEALLOCATE all;");
+                            let _ = pool.execute("DEALLOCATE all;").await;
                         }
 
                         debug!("Executing query: {}", stmt);
@@ -532,7 +532,12 @@ impl Plugin for Pgql {
                                 result.output.insert(idx.to_string(), rows);
                             },
                             Err(e) => {
-                                let _ = transaction.rollback().await;
+                                let _ = transaction.rollback();
+
+                                if self.deallocate_pp_stmt {
+                                    info!("DEALLOCATE all;");
+                                    let _ = pool.execute("DEALLOCATE all;").await;
+                                }
 
                                 return_plugin_exec_result_err!(result, e.to_string());
                             },
@@ -553,7 +558,12 @@ impl Plugin for Pgql {
                                 result.output.insert(idx.to_string(), Value::Number(Number::from(res.rows_affected())));
                             },
                             Err(e) => {
-                                let _ = transaction.rollback().await.unwrap();
+                                let _ = transaction.rollback().await;
+
+                                if self.deallocate_pp_stmt {
+                                    info!("DEALLOCATE all;");
+                                    let _ = pool.execute("DEALLOCATE all;").await;
+                                }
 
                                 return_plugin_exec_result_err!(result, e.to_string());
                             }
