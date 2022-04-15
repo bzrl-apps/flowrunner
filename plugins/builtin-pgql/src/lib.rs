@@ -482,6 +482,11 @@ impl Plugin for Pgql {
                     // Parse query
                     let qry_type = sql_parser(stmt);
 
+                    if self.deallocate_pp_stmt {
+                        info!("DEALLOCATE all (begin);");
+                        let _ = pool.execute("DEALLOCATE all;").await;
+                    }
+
                     if qry_type.as_str() == "query" {
                         let mut qry = sqlx::query_as::<_, PgqlRow>(<&str>::clone(&stmt));
                         //let mut qry = sqlx::query(<&str>::clone(&stmt));
@@ -490,11 +495,6 @@ impl Plugin for Pgql {
 
                         for p in st.params.iter() {
                             bind_query!(qry, p, result);
-                        }
-
-                        if self.deallocate_pp_stmt {
-                            info!("DEALLOCATE all;");
-                            let _ = pool.execute("DEALLOCATE all;").await;
                         }
 
                         debug!("Executing query: {}", stmt);
@@ -535,7 +535,7 @@ impl Plugin for Pgql {
                                 let _ = transaction.rollback();
 
                                 if self.deallocate_pp_stmt {
-                                    info!("DEALLOCATE all;");
+                                    info!("DEALLOCATE all (rollback);");
                                     let _ = pool.execute("DEALLOCATE all;").await;
                                 }
 
@@ -561,7 +561,7 @@ impl Plugin for Pgql {
                                 let _ = transaction.rollback().await;
 
                                 if self.deallocate_pp_stmt {
-                                    info!("DEALLOCATE all;");
+                                    info!("DEALLOCATE all (rollback);");
                                     let _ = pool.execute("DEALLOCATE all;").await;
                                 }
 
@@ -575,7 +575,7 @@ impl Plugin for Pgql {
             let _ = transaction.commit().await;
 
             if self.deallocate_pp_stmt {
-                info!("DEALLOCATE all;");
+                info!("DEALLOCATE all (commit);");
                 let _ = pool.execute("DEALLOCATE all;").await;
             }
 
