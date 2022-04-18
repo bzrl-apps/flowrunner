@@ -15,14 +15,14 @@ use json_ops::json_map;
 use chrono::{DateTime, Utc};
 
 #[tokio::test]
-async fn test_sink_postgres() {
+async fn sqlx_pgql_sink() {
     //init_log();
     let _ = env_logger::try_init();
-    init_kafka(&["pg_topic1"]).await;
-    let pool = init_db(&["pg_users1"]).await;
+    init_kafka(&["sqlx_pgql_topic1"]).await;
+    let pool = init_db(&["sqlx_pgql_users1"]).await;
 
     sqlx::query(r#"
-CREATE TABLE IF NOT EXISTS pg_users1 (
+CREATE TABLE IF NOT EXISTS sqlx_pgql_users1 (
 id serial PRIMARY KEY,
 username VARCHAR ( 50 ) UNIQUE NOT NULL,
 password character varying(64)NOT NULL,
@@ -47,7 +47,7 @@ sources:
     consumer:
       group_id: group1
       topics:
-      - pg_topic1
+      - sqlx_pgql_topic1
       offset: earliest
       options:
         enable.partition.eof: false
@@ -70,7 +70,7 @@ sinks:
     conn_str: "postgres://flowrunner:flowrunner@localhost:5432/flowrunner"
     max_conn: "5"
     stmts:
-    - stmt: "INSERT INTO pg_users1(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5);"
+    - stmt: "INSERT INTO sqlx_pgql_users1(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5);"
       cond: "{{ context['data']['task-1']['output']['stdout']['username'] == 'test2' }}"
       params:
         - value: "{{ context['data']['task-1']['output']['stdout']['username'] }}"
@@ -101,7 +101,7 @@ sinks:
 
     for m in msgs.iter() {
         let produce_future = producer.send(
-            FutureRecord::to("pg_topic1")
+            FutureRecord::to("sqlx_pgql_topic1")
                 .payload(m.as_bytes())
                 .key(key_bytes),
                 //.headers(OwnedHeaders::new().add("header_key", "header_value")),
@@ -121,7 +121,7 @@ sinks:
     sleep(Duration::from_millis(10000)).await;
 
     // Query directly to database to check results
-    let rows = sqlx::query(r#"SELECT * FROM pg_users1;"#)
+    let rows = sqlx::query(r#"SELECT * FROM sqlx_pgql_users1;"#)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -160,14 +160,14 @@ sinks:
 }
 
 #[tokio::test]
-async fn test_job_postgres() {
+async fn sqlx_pgql_job() {
     //init_log();
     let _ = env_logger::try_init();
-    init_kafka(&["pg_topic2"]).await;
-    let pool = init_db(&["pg_users2"]).await;
+    init_kafka(&["sqlx_pgql_topic2"]).await;
+    let pool = init_db(&["sqlx_pgql_users2"]).await;
 
     sqlx::query(r#"
-CREATE TABLE IF NOT EXISTS pg_users2 (
+CREATE TABLE IF NOT EXISTS sqlx_pgql_users2 (
 id serial PRIMARY KEY,
 username VARCHAR ( 50 ) UNIQUE NOT NULL,
 password character varying(64)NOT NULL,
@@ -192,7 +192,7 @@ sources:
     consumer:
       group_id: group1
       topics:
-      - pg_topic2
+      - sqlx_pgql_topic2
       offset: earliest
       options:
         enable.partition.eof: false
@@ -210,7 +210,7 @@ jobs:
         conn_str: "postgres://flowrunner:flowrunner@localhost:5432/flowrunner"
         max_conn: "5"
         stmts:
-        - stmt: "INSERT INTO pg_users2(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5);"
+        - stmt: "INSERT INTO sqlx_pgql_users2(username, password, enabled, age, created_at) VALUES ($1, $2, $3, $4, $5);"
           cond: "{{ context['data']['username'] == 'test2' }}"
           params:
           - value: "{{ context['data']['username'] }}"
@@ -241,7 +241,7 @@ jobs:
 
     for m in msgs.iter() {
         let produce_future = producer.send(
-            FutureRecord::to("pg_topic2")
+            FutureRecord::to("sqlx_pgql_topic2")
                 .payload(m.as_bytes())
                 .key(key_bytes),
                 //.headers(OwnedHeaders::new().add("header_key", "header_value")),
@@ -261,7 +261,7 @@ jobs:
     sleep(Duration::from_millis(10000)).await;
 
     // Query directly to database to check results
-    let rows = sqlx::query(r#"SELECT * FROM pg_users2;"#)
+    let rows = sqlx::query(r#"SELECT * FROM sqlx_pgql_users2;"#)
         .fetch_all(&pool)
         .await
         .unwrap();
