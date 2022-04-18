@@ -1,3 +1,15 @@
+## [0.9.0](https://github.com/bzrl-apps/flowrunner/compare/v0.8.2...v0.9.0) (2022-04-18)
+
+
+### 🚀 Features
+
+* **builtin-tokio-pgql:** init new plugin for tokio postgres ([515c29e](https://github.com/bzrl-apps/flowrunner/commit/515c29ea9f62b72d610ee84b29ccaf882c61fb40)), closes [#41](https://github.com/bzrl-apps/flowrunner/issues/41)
+
+
+### 🐛 Bug Fixes
+
+* **builtin-pgql-sqlx:** rename builtin-pgql to builtin-pgql-sqlx ([b52afbb](https://github.com/bzrl-apps/flowrunner/commit/b52afbbc42d9a68d37c049920839671ea2d1f449))
+
 ### [0.8.2](https://github.com/bzrl-apps/flowrunner/compare/v0.8.1...v0.8.2) (2022-04-15)
 
 
