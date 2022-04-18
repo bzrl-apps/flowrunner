@@ -339,7 +339,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "builtin-pgql"
+name = "builtin-pgql-sqlx"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -362,23 +362,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "builtin-shell"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-channel",
- "async-trait",
- "env_logger 0.8.4",
- "flowrunner",
- "json_ops",
- "log",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "builtin-tokio-pgql"
+name = "builtin-pgql-tokio"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -399,6 +383,22 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "uuid",
+]
+
+[[package]]
+name = "builtin-shell"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "async-trait",
+ "env_logger 0.8.4",
+ "flowrunner",
+ "json_ops",
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

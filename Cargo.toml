@@ -32,7 +32,7 @@ members = [
   "plugins/builtin-shell",
   "plugins/builtin-kafka-consumer",
   "plugins/builtin-uri",
-  "plugins/builtin-pgql",
+  "plugins/builtin-pgql-sqlx",
   "plugins/builtin-kafka-producer",
   "plugins/builtin-json-patch",
   "plugins/builtin-datastore",

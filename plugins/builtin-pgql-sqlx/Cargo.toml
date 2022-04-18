@@ -1,5 +1,5 @@
 [package]
-name = "builtin-pgql"
+name = "builtin-pgql-sqlx"
 version = "0.1.0"
 edition = "2021"
 

@@ -827,7 +827,7 @@ jobs:
 sinks:
 - name: pg1
   if: "job == job1"
-  plugin: builtin-pgql
+  plugin: builtin-pgql-sqlx
   params:
     conn_str: "postgres://localhost:5432/flowrunner"
     max_conn: 5
@@ -899,7 +899,7 @@ sinks:
         sinks.push(Sink {
             name: "pg1".to_string(),
             r#if: Some("job == job1".to_string()),
-            plugin: "builtin-pgql".to_string(),
+            plugin: "builtin-pgql-sqlx".to_string(),
             params: params_sink1,
             context: Map::new(),
             rx: vec![],

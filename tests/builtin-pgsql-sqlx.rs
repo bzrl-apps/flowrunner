@@ -65,7 +65,7 @@ jobs:
 
 sinks:
 - name: pg1
-  plugin: builtin-pgql
+  plugin: builtin-pgql-sqlx
   params:
     conn_str: "postgres://flowrunner:flowrunner@localhost:5432/flowrunner"
     max_conn: "5"
@@ -205,7 +205,7 @@ jobs:
 - hosts: localhost
   tasks:
   - name: pg1
-    builtin-pgql:
+    builtin-pgql-sqlx:
       params:
         conn_str: "postgres://flowrunner:flowrunner@localhost:5432/flowrunner"
         max_conn: "5"
