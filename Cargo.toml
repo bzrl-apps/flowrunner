@@ -36,7 +36,8 @@ members = [
   "plugins/builtin-kafka-producer",
   "plugins/builtin-json-patch",
   "plugins/builtin-datastore",
-  "plugins/builtin-webhook"
+  "plugins/builtin-webhook",
+  "plugins/builtin-pgql-tokio"
 ]
 
 #[lib]
@@ -91,6 +92,7 @@ rdkafka = { version = "0.28", features = ["default", "cmake-build", "ssl"] }
 
 # Postgres
 sqlx = { version = "0.5.1", features = [ "postgres", "runtime-tokio-rustls", "tls", "all-types" ] }
+tokio-postgres = { version = "0.7", features = [ "runtime", "with-time-0_3", "with-chrono-0_4", "with-serde_json-1", "with-eui48-1", "with-bit-vec-0_6", "with-uuid-0_8" ] }
 
 # Json manipulation
 json_ops = { path = "json-ops" }

@@ -13,6 +13,8 @@ use rdkafka::{
 
 use sqlx::postgres::{PgPool, PgPoolOptions};
 
+use tokio_postgres::{NoTls, Client};
+
 use rocksdb::{DB, ColumnFamilyDescriptor};
 
 use log::info;
@@ -86,6 +88,22 @@ pub async fn init_db(tables: &[&str]) -> PgPool {
     }
 
     pool
+}
+
+pub async fn init_tokio_pgql_client(conn_str: &str) -> Client {
+    let (client, connection) = tokio_postgres::connect(conn_str, NoTls)
+        .await
+        .unwrap();
+
+    // The connection object performs the actual communication with the database,
+    // so spawn it off to run on its own.
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+
+    client
 }
 
 pub fn cleanup_rocksdb(path: &str, namespaces: &[&str]) {

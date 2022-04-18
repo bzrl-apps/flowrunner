@@ -1,0 +1,47 @@
+[package]
+name = "builtin-pgql-tokio"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+flowrunner = { path = "../../" }
+json_ops = { path = "../../json-ops" }
+
+# Async/await
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+async-channel = "1"
+futures = "0.3"
+
+# Error
+anyhow = { version = "1.0" }
+
+# Log
+log = "0.4"
+env_logger = "0.8"
+
+# Serialization/deserialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# SQL
+tokio-postgres = { version = "0.7", features = [ "runtime", "with-time-0_3", "with-chrono-0_4", "with-serde_json-1", "with-eui48-1", "with-bit-vec-0_6", "with-uuid-0_8" ] }
+chrono = "0.4"
+ipnetwork = "0.18"
+uuid = "0.8"
+eui48 = "1.1"
+
+# Eval
+evalexpr = "7"
+
+# SqlParser
+#sqlparser = "0.13"
+
+# Regex
+regex = "1"
+
+[lib]
+crate-type = ["dylib"]
