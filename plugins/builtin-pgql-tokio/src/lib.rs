@@ -20,8 +20,12 @@ use tokio::runtime::Runtime;
 use async_trait::async_trait;
 
 use futures::{pin_mut, TryStreamExt};
+
 use tokio_postgres::{NoTls, Statement, Error, Row};
-use tokio_postgres::types::{ToSql, Json};
+use tokio_postgres::types::ToSql;
+
+use openssl::ssl::{SslConnector, SslFiletype, SslMethod};
+use postgres_openssl::MakeTlsConnector;
 
 use chrono::{DateTime, Utc, NaiveDate, NaiveDateTime, NaiveTime};
 
@@ -39,6 +43,16 @@ struct TokioPgql {
     conn_str: String,
     stmts: Vec<Stmt>,
     pp_stmt_enabled: bool,
+    tls: Option<TlsConfig>
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, Clone)]
+struct TlsConfig {
+    verify: bool,
+    client_key: Option<String>,
+    client_cert: Option<String>,
+    ca_cert: Option<String>
+
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
@@ -417,6 +431,11 @@ impl Plugin for TokioPgql {
             Err(_) => self.pp_stmt_enabled = true,
         };
 
+        match jops_params.get_value_e::<TlsConfig>("tls") {
+            Ok(v) => self.tls = Some(v),
+            Err(_) => (),
+        };
+
         Ok(())
     }
 
@@ -443,21 +462,83 @@ impl Plugin for TokioPgql {
         let mut result = PluginExecResult::default();
 
         rt.block_on(async {
-            // Connect to the database.
-            let mut client = match tokio_postgres::connect(&self.conn_str, NoTls).await {
-                Ok((cli, conn)) => {
-                    rt.spawn(async move {
-                        if let Err(e) = conn.await {
-                            error!("connection error: {}", e);
-                        }
-                    });
+            let mut client = match self.tls.clone() {
+                Some(tls) => {
+                    let mut builder = match SslConnector::builder(SslMethod::tls()) {
+                        Ok(v) => v,
+                        Err(e) => return_plugin_exec_result_err!(result, e.to_string()),
+                    };
 
-                    cli
+                    if !tls.verify {
+                        builder.set_verify(openssl::ssl::SslVerifyMode::NONE);
+                    }
+
+                    if let Some(client_cert) = tls.client_cert {
+                        if let Err(e) = builder.set_certificate_chain_file(&client_cert) {
+                            return_plugin_exec_result_err!(result, e.to_string());
+                        }
+                    }
+
+                    if let Some(client_key) = tls.client_key {
+                        if let Err(e) = builder.set_private_key_file(&client_key, SslFiletype::PEM) {
+                            return_plugin_exec_result_err!(result, e.to_string());
+                        }
+                    }
+
+                    if let Some(ca_cert) = tls.ca_cert {
+                        if let Err(e) = builder.set_ca_file(&ca_cert) {
+                            return_plugin_exec_result_err!(result, e.to_string());
+                        }
+                    }
+
+                    let connector = MakeTlsConnector::new(builder.build());
+                    match tokio_postgres::connect(&self.conn_str, connector).await {
+                        Ok((cli, conn)) => {
+                            rt.spawn(async move {
+                                if let Err(e) = conn.await {
+                                    error!("connection error: {}", e);
+                                }
+                            });
+
+                            cli
+                        },
+                        Err(e) => {
+                           return_plugin_exec_result_err!(result, e.to_string());
+                        },
+                    }
                 },
-                Err(e) => {
-                    return_plugin_exec_result_err!(result, e.to_string());
-                },
+                None => {
+                    match tokio_postgres::connect(&self.conn_str, NoTls).await {
+                        Ok((cli, conn)) => {
+                            rt.spawn(async move {
+                                if let Err(e) = conn.await {
+                                    error!("connection error: {}", e);
+                                }
+                            });
+
+                            cli
+                        },
+                        Err(e) => {
+                           return_plugin_exec_result_err!(result, e.to_string());
+                        },
+                    }
+                }
             };
+            //// Connect to the database.
+            //let mut client = match tokio_postgres::connect(&self.conn_str, NoTls).await {
+                //Ok((cli, conn)) => {
+                    //rt.spawn(async move {
+                        //if let Err(e) = conn.await {
+                            //error!("connection error: {}", e);
+                        //}
+                    //});
+
+                    //cli
+                //},
+                //Err(e) => {
+                    //return_plugin_exec_result_err!(result, e.to_string());
+                //},
+            //};
 
             let transaction = match client.transaction().await {
                 Ok(tx) => tx,
