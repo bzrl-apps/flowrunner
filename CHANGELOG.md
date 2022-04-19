@@ -1,3 +1,10 @@
+## [0.10.0](https://github.com/bzrl-apps/flowrunner/compare/v0.9.0...v0.10.0) (2022-04-19)
+
+
+### 🚀 Features
+
+* **builtin-pgql-tokio:** handle TLS configuration ([6e6336b](https://github.com/bzrl-apps/flowrunner/commit/6e6336b44c90ce466db8c9b128b8931fa11a8436)), closes [#42](https://github.com/bzrl-apps/flowrunner/issues/42)
+
 ## [0.9.0](https://github.com/bzrl-apps/flowrunner/compare/v0.8.2...v0.9.0) (2022-04-18)
 
 
