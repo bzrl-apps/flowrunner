@@ -8,7 +8,6 @@ use flowrunner::utils::*;
 extern crate json_ops;
 use json_ops::JsonOps;
 
-use std::collections::HashMap;
 use std::net::{SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 
@@ -28,7 +27,7 @@ use tracing::*;
 
 use axum::Router;
 use axum::routing::*;
-use axum::extract::{Path, Json, Extension, OriginalUri, MatchedPath};
+use axum::extract::{Json, Extension, OriginalUri, MatchedPath};
 use axum::response::IntoResponse;
 use axum::http::StatusCode;
 
@@ -36,15 +35,24 @@ use axum::http::StatusCode;
 #[derive(Default, Debug ,Serialize, Deserialize, Clone, PartialEq)]
 struct HttpServer {
     host_addr: String,
-    routes: Vec<Route>,
+    is_also_sink: bool,
+    routes: Vec<HttpRoute>,
 }
 
 #[derive(Default, Debug ,Serialize, Deserialize, Clone, PartialEq)]
-struct Route {
+struct HttpRoute {
     path: String,
     method: String,
-    status: u16,
-    result: String
+    // Path to task's result sent from job
+    result: HttpResult
+}
+
+#[derive(Default, Debug ,Serialize, Deserialize, Clone, PartialEq)]
+struct HttpResult {
+    job: String,
+    task: String,
+    // path from task's output
+    payload: Option<String>
 }
 
 #[async_trait]
@@ -62,7 +70,9 @@ impl Plugin for HttpServer {
     }
 
     fn get_params(&self) -> Map<String, Value> {
-        let params: Map<String, Value> = Map::new();
+        let mut params: Map<String, Value> = Map::new();
+
+        params.insert("is_also_sink".to_string(), Value::Bool(self.is_also_sink));
 
         params
     }
@@ -71,12 +81,14 @@ impl Plugin for HttpServer {
         let jops_params = JsonOps::new(Value::Object(params));
         let mut default = HttpServer::default();
 
+        default.is_also_sink = true;
+
         match jops_params.get_value_e::<String>("host_addr") {
             Ok(v) => default.host_addr = v,
             Err(e) => { return Err(anyhow!(e)); },
         };
 
-        match jops_params.get_value_e::<Vec<Route>>("routes") {
+        match jops_params.get_value_e::<Vec<HttpRoute>>("routes") {
             Ok(v) => default.routes = v,
             Err(e) => { return Err(anyhow!(e)); },
         };
@@ -91,7 +103,7 @@ impl Plugin for HttpServer {
 
     /// Apply operation per operation on target in the order. The result of previous operation will
     /// be used for the next operation.
-    async fn func(&self, sender: Option<String>, rx: &Vec<Sender<FlowMessage>>, tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
+    async fn func(&self, sender: Option<String>, tx: &Vec<Sender<FlowMessage>>, rx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
         let _ =  env_logger::try_init();
 
         let mut result = PluginExecResult::default();
@@ -109,19 +121,20 @@ impl Plugin for HttpServer {
 
         let mut app = Router::new();
         for r in self.routes.iter() {
+            warn!("r.path {}", r.path);
             match r.method.as_str() {
                 "GET" => app = app.route(r.path.as_str(), get(get_handler)),
-                //"POST" => app = app.route(r.path.as_str(), post(post_handler)),
-                //"DELETE" => app = app.route(r.path.as_str(), delete(delete_handler)),
-                //"PUT" => app = app.route(r.path.as_str(), put(put_handler)),
+                "POST" => app = app.route(r.path.as_str(), post(post_handler)),
+                "DELETE" => app = app.route(r.path.as_str(), delete(delete_handler)),
+                "PUT" => app = app.route(r.path.as_str(), put(put_handler)),
                 _ => return_plugin_exec_result_err!(result, "HTTP Method not supported!".to_string()),
             };
 
         }
         app = app.layer(Extension(shared_routes))
             .layer(Extension(shared_sender))
-            .layer(Extension(rx.clone()))
-            .layer(Extension(tx.clone()));
+            .layer(Extension(tx.clone()))
+            .layer(Extension(rx.clone()));
 
         // run our app with hyper
         // `axum::Server` is a re-export of `hyper::Server`
@@ -147,18 +160,20 @@ async fn get_handler(
     // as JSON into a `CreateUser` type
     matched_path: MatchedPath,
     OriginalUri(uri): OriginalUri,
-    Extension(rx): Extension<Vec<Sender<FlowMessage>>>,
-    Extension(tx): Extension<Vec<Receiver<FlowMessage>>>,
+    Extension(tx): Extension<Vec<Sender<FlowMessage>>>,
+    Extension(rx): Extension<Vec<Receiver<FlowMessage>>>,
     Extension(sender): Extension<Arc<String>>,
-    Extension(routes): Extension<Arc<Vec<Route>>>,
+    Extension(routes): Extension<Arc<Vec<HttpRoute>>>,
 ) -> impl IntoResponse {
 
     let path = matched_path.as_str();
-    debug!("GET Path: {}", path);
+    debug!("GET: path={}", path);
 
     let route = routes.iter().find(|r| r.path == path && r.method == "GET");
+    let uuid = generate_uuid();
     if let Some(r) = route.clone() {
         let msg = FlowMessage::JsonWithSender {
+            uuid: uuid.clone(),
             sender: sender.to_string(),
             source: Some(r.path.clone()),
             value: json!({
@@ -166,78 +181,211 @@ async fn get_handler(
                     "matched_path": matched_path.as_str(),
                     "original_uri": uri.to_string(),
                     "method": r.method,
-                    "result": r.result
                 },
                 "payload": {}
             }),
         };
 
-        for rx1 in rx.iter() {
-            if let Err(e) = rx1.send(msg.clone()).await {
-                return (StatusCode::BAD_REQUEST, Json(json!({
-                    "error": e.to_string()
-                })));
-            }
-        }
+        let (status, value) = handle_message_exchange(r.to_owned(), uuid, msg, tx, rx).await;
 
-        match tx[0].recv().await {
-            // Add message received as data in job context
-            Ok(msg) => {
-                let mut context = Map::new();
-
-                match msg {
-                    FlowMessage::JsonWithSender{ sender: s, source: src, value: v } => {
-                        context.insert("sender".to_string(), Value::String(s));
-                        context.insert("source".to_string(), Value::String(src.unwrap_or_else(|| "".to_string())));
-                        context.insert("data".to_string(), v);
-                    },
-                    _ => {
-                        return (StatusCode::BAD_REQUEST, Json(json!({
-                            "error": "Message received is not Message::JsonWithSender type"
-                        })));
-                    },
-                }
-
-                let mut text = r.result.clone();
-                if render_template(&mut text, &context) {
-                    let v_text: Value = serde_json::from_str(&text).unwrap_or(json!({
-                        "error": "Cannot serialize rendered result string"
-                    }));
-
-                    return (StatusCode::from_u16(r.status).unwrap_or(StatusCode::OK), Json(v_text));
-                }
-
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                    "error": "Cannot render result template"
-                })));
-            },
-            Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({
-                "error": e.to_string()
-            }))),
-        };
+        return (status, Json(value));
     }
 
     (StatusCode::NOT_FOUND, Json(Value::Null))
-    //// Check route
-
-    //StatusCode::OK
 }
 
+async fn post_handler(
+    // this argument tells axum to parse the request body
+    // as JSON into a `CreateUser` type
+    matched_path: MatchedPath,
+    OriginalUri(uri): OriginalUri,
+    Json(payload): Json<Value>,
+    Extension(tx): Extension<Vec<Sender<FlowMessage>>>,
+    Extension(rx): Extension<Vec<Receiver<FlowMessage>>>,
+    Extension(sender): Extension<Arc<String>>,
+    Extension(routes): Extension<Arc<Vec<HttpRoute>>>,
+) -> impl IntoResponse {
 
-fn render_template(text: &mut String, context: &Map<String, Value>) -> bool {
-    let mut data: Map<String, Value> = Map::new();
+    let path = matched_path.as_str();
+    debug!("POST: path={}", path);
 
-    data.insert("context".to_string(), Value::from(context.clone()));
+    let route = routes.iter().find(|r| r.path == path && r.method == "POST");
+    let uuid = generate_uuid();
+    if let Some(r) = route.clone() {
+        let msg = FlowMessage::JsonWithSender {
+            uuid: uuid.clone(),
+            sender: sender.to_string(),
+            source: Some(r.path.clone()),
+            value: json!({
+                "route": {
+                    "matched_path": matched_path.as_str(),
+                    "original_uri": uri.to_string(),
+                    "method": r.method,
+                },
+                "payload": payload
+            }),
+        };
 
-    expand_env_map(&mut data);
+        let (status, value) = handle_message_exchange(r.to_owned(), uuid, msg, tx, rx).await;
 
-    // Expand job if condition
-    if let Err(e) = render_text_template("httpserver", text, &data) {
-        error!("httpserver: error to render template {}", e);
-        return false
+        return (status, Json(value));
     }
 
-    true
+    (StatusCode::NOT_FOUND, Json(Value::Null))
+}
+
+async fn put_handler(
+    // this argument tells axum to parse the request body
+    // as JSON into a `CreateUser` type
+    matched_path: MatchedPath,
+    OriginalUri(uri): OriginalUri,
+    Json(payload): Json<Value>,
+    Extension(tx): Extension<Vec<Sender<FlowMessage>>>,
+    Extension(rx): Extension<Vec<Receiver<FlowMessage>>>,
+    Extension(sender): Extension<Arc<String>>,
+    Extension(routes): Extension<Arc<Vec<HttpRoute>>>,
+) -> impl IntoResponse {
+
+    let path = matched_path.as_str();
+    debug!("PUT: path={}", path);
+
+    let route = routes.iter().find(|r| r.path == path && r.method == "PUT");
+    let uuid = generate_uuid();
+    if let Some(r) = route.clone() {
+        let msg = FlowMessage::JsonWithSender {
+            uuid: uuid.clone(),
+            sender: sender.to_string(),
+            source: Some(r.path.clone()),
+            value: json!({
+                "route": {
+                    "matched_path": matched_path.as_str(),
+                    "original_uri": uri.to_string(),
+                    "method": r.method,
+                },
+                "payload": payload
+            }),
+        };
+
+        let (status, value) = handle_message_exchange(r.to_owned(), uuid, msg, tx, rx).await;
+
+        return (status, Json(value));
+    }
+
+    (StatusCode::NOT_FOUND, Json(Value::Null))
+}
+
+async fn delete_handler(
+    // this argument tells axum to parse the request body
+    // as JSON into a `CreateUser` type
+    matched_path: MatchedPath,
+    OriginalUri(uri): OriginalUri,
+    Extension(tx): Extension<Vec<Sender<FlowMessage>>>,
+    Extension(rx): Extension<Vec<Receiver<FlowMessage>>>,
+    Extension(sender): Extension<Arc<String>>,
+    Extension(routes): Extension<Arc<Vec<HttpRoute>>>,
+) -> impl IntoResponse {
+
+    let path = matched_path.as_str();
+    debug!("DELETE: path={}", path);
+
+    let route = routes.iter().find(|r| r.path == path && r.method == "DELETE");
+    let uuid = generate_uuid();
+    if let Some(r) = route.clone() {
+        let msg = FlowMessage::JsonWithSender {
+            uuid: uuid.clone(),
+            sender: sender.to_string(),
+            source: Some(r.path.clone()),
+            value: json!({
+                "route": {
+                    "matched_path": matched_path.as_str(),
+                    "original_uri": uri.to_string(),
+                    "method": r.method,
+                },
+                "payload": {}
+            }),
+        };
+
+        let (status, value) = handle_message_exchange(r.to_owned(), uuid, msg, tx, rx).await;
+
+        return (status, Json(value));
+    }
+
+    (StatusCode::NOT_FOUND, Json(Value::Null))
+}
+
+async fn handle_message_exchange(
+    route: HttpRoute,
+    uuid: String,
+    msg: FlowMessage,
+    tx: Vec<Sender<FlowMessage>>,
+    rx: Vec<Receiver<FlowMessage>>
+) -> (StatusCode, Value) {
+    for tx1 in tx.iter() {
+        if let Err(e) = tx1.send(msg.clone()).await {
+            return (StatusCode::BAD_REQUEST, json!({
+                "error": e.to_string()
+            }));
+        }
+    }
+
+    loop {
+        match rx[0].recv().await {
+            // Add message received as data in job context
+            Ok(msg) => {
+                debug!("message received: msg={:?}", msg);
+
+                match msg {
+                    FlowMessage::JsonWithSender{ uuid: id, sender: s, source: _src, value: v } => {
+                        if uuid == id && route.result.job == s {
+                            debug!("Got response from job with the same ID: job={}, uuid={}", route.result.job, id);
+
+                            let (status, value) = build_response(&route.result, &v);
+
+                            return (status, value);
+                        } else {
+                            debug!("Ignore message: uuid_orig={}, uuid={}", uuid, id);
+                        }
+                    },
+                    _ => {
+                        return (StatusCode::BAD_REQUEST, json!({
+                            "error": "Message received is not Message::JsonWithSender type"
+                        }));
+                    },
+                }
+            },
+            Err(e) => {
+                return (StatusCode::BAD_REQUEST, json!({
+                    "error": e.to_string()
+                }));
+            }
+        }
+    }
+}
+
+fn build_response(result: &HttpResult, v: &Value) -> (StatusCode, Value) {
+    debug!("build response with: task={}, payload={:?}, v={:?}", result.task, result.payload, v);
+
+    let jops_value = JsonOps::new(Value::Object(v.as_object().unwrap_or(&Map::new()).to_owned()));
+
+    match jops_value.get_value_e::<Value>(result.task.as_str()) {
+        Ok(v) => {
+            let jops_task = JsonOps::new(Value::Object(v.as_object().unwrap_or(&Map::new()).to_owned()));
+            if let Ok(status) = jops_task.get_value_e::<String>("status") {
+                if status == "Ok" {
+                    let payload = result.payload
+                        .to_owned()
+                        .and_then(|p| Some(format!("output.{}", p)))
+                        .unwrap_or("output".to_string());
+                    return  (StatusCode::OK, jops_task.get_value_e::<Value>(payload.as_str()).unwrap_or(Value::Null).to_owned());
+                }
+
+                return (StatusCode::BAD_REQUEST, v.get("error").unwrap_or(&Value::String("unknown error".to_string())).to_owned());
+            }
+
+            (StatusCode::BAD_REQUEST, Value::String("cannot determine task's status".to_string()))
+        },
+        Err(_) => (StatusCode::BAD_REQUEST, json!({"error": format!("cannot get path result {}", result.task).as_str()})),
+    }
 }
 
 #[no_mangle]
@@ -259,9 +407,9 @@ mod tests {
 
     #[tokio::test]
     async fn httpserver_func() {
-        let (rx, tx) = bounded::<FlowMessage>(1024);
-        let rxs = vec![rx.clone()];
+        let (tx, rx) = bounded::<FlowMessage>(1024);
         let txs = vec![tx.clone()];
+        let rxs = vec![rx.clone()];
 
         let mut httpserver = HttpServer::default();
 
@@ -269,8 +417,9 @@ mod tests {
             "host_addr": "127.0.0.1:3000",
             "routes": [
                 {
-                    "path": "route1",
-                    "method": "GET"
+                    "path": "/routes/:route",
+                    "method": "GET",
+                    "status": 200
                 }
             ]
         }"#).unwrap();
@@ -278,12 +427,12 @@ mod tests {
         httpserver.validate_params(params).unwrap();
 
         tokio::spawn(async move{
-            let _ = httpserver.func(Some("httpserver".to_string()), &rxs, &vec![]).await;
+            let _ = httpserver.func(Some("httpserver".to_string()), &txs, &rxs).await;
         });
 
         // Send a get request
         let client = reqwest::Client::new();
-        let mut response = client.get("http://localhost:3000/webroute/route1")
+        let mut response = client.get("http://localhost:3000/routes/route1")
             .header(CONTENT_TYPE, "application/json")
             //.body(r#"{"message": "hello world"}"#)
             .send()

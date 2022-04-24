@@ -37,7 +37,7 @@ members = [
   "plugins/builtin-json-patch",
   "plugins/builtin-datastore",
   "plugins/builtin-webhook",
-  "plugins/builtin-pgql-tokio"
+  "plugins/builtin-pgql-tokio",
   "plugins/builtin-httpserver"
 ]
 
@@ -117,6 +117,9 @@ sys-info = "0.9"
 axum = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version="0.3", features = ["env-filter"] }
+
+# Request
+reqwest = "0.11"
 
 # UUID
 uuid = { version = "0.8", features = ["default", "v4"] }
