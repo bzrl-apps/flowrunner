@@ -53,8 +53,14 @@ impl Source {
             Some(mut plugin) => {
                 plugin.validate_params(s.params.clone())?;
 
+                let params = plugin.get_params();
+                let is_also_sink = params.get("is_also_sink")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or_default();
+
                 let rx_cloned = s.rx.clone();
-                let tx_cloned = vec![];
+                let tx_cloned = if is_also_sink { s.tx.clone() } else { vec![] };
+
                 let sender = s.name.clone();
                 //let result_cloned = result.clone();
                 tokio::spawn(async move {

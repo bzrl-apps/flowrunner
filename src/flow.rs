@@ -162,6 +162,23 @@ impl Flow {
                     }
                 }
 
+                // Prepare messaging channels between jobs, sources & sinks
+                // Because sometime a source also can be a sink and receives messages from jobs
+                // such as http-server, we need set the same job's receiver for source and sink.
+                let srcs = self.sources.clone();
+                for (i, mut src) in srcs.into_iter().enumerate() {
+                    let (rx_job_src, tx_job_src) = bounded::<FlowMessage>(1024);
+                    src.tx.push(tx_job_src);
+
+                    self.sources[i] = src;
+
+                    let jobs = self.jobs.clone();
+                    for (j, mut job) in jobs.into_iter().enumerate() {
+                        job.rx.push(rx_job_src.clone());
+                        self.jobs[j] = job;
+                    }
+                }
+
                 self.launch_source_threads().await;
                 self.launch_job_threads().await;
                 self.launch_sink_threads().await;
