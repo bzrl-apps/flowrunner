@@ -55,7 +55,8 @@ impl Sink {
                     // Add message received as data in job context
                     Ok(msg) => {
                         match msg {
-                            FlowMessage::JsonWithSender{ sender: s, source: src, value: v } => {
+                            FlowMessage::JsonWithSender{ uuid: id, sender: s, source: src, value: v } => {
+                                self.context.insert("uuid".to_string(), Value::String(id));
                                 self.context.insert("sender".to_string(), Value::String(s));
                                 self.context.insert("source".to_string(), Value::String(src.unwrap_or_else(|| "".to_string())));
                                 self.context.insert("data".to_string(), v);

@@ -100,8 +100,12 @@ impl Job {
                 match self.tx[0].recv().await {
                     // Add message received as data in job context
                     Ok(msg) => {
+                        let mut uuid = String::new();
+
                         match msg {
-                            FlowMessage::JsonWithSender{ sender: s, source: src, value: v } => {
+                            FlowMessage::JsonWithSender{ uuid: id, sender: s, source: src, value: v } => {
+                                uuid = id.clone();
+                                self.context.insert("uuid".to_string(), Value::String(id));
                                 self.context.insert("sender".to_string(), Value::String(s));
                                 self.context.insert("source".to_string(), Value::String(src.unwrap_or_else(|| "".to_string())));
                                 self.context.insert("data".to_string(), v);
@@ -128,6 +132,7 @@ impl Job {
 
                         for rx1 in self.rx.iter() {
                             let msg = FlowMessage::JsonWithSender {
+                                uuid: uuid.clone(),
                                 sender: self.name.clone(),
                                 source: None,
                                 value: Value::Object(self.result.clone()),
