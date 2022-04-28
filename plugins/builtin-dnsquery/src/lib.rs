@@ -189,8 +189,8 @@ impl Plugin for DnsQuery {
                 q_res.status = false;
                 q_res.result = "none".to_string();
 
-                if !response.answers().is_empty() {
-                    if let Some(rd) = response.answers()[0].data() {
+                for a in response.answers().iter() {
+                    if let Some(rd) = a.data() {
                         (q_res.status, q_res.result) = match new_rdata(rtype, q.rdata.clone()) {
                             Ok(v) => {
                                 if *rd == v {
@@ -204,6 +204,8 @@ impl Plugin for DnsQuery {
                                 (false, e.to_string())
                             }
                         };
+
+                        if q_res.status { break; }
                     }
                 }
 
