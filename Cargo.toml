@@ -39,7 +39,8 @@ members = [
   "plugins/builtin-webhook",
   "plugins/builtin-pgql-tokio",
   "plugins/builtin-httpserver",
-  "plugins/builtin-dnsquery"
+  "plugins/builtin-dnsquery",
+  "plugins/builtin-git"
 ]
 
 #[lib]
