@@ -40,7 +40,8 @@ members = [
   "plugins/builtin-pgql-tokio",
   "plugins/builtin-httpserver",
   "plugins/builtin-dnsquery",
-  "plugins/builtin-git"
+  "plugins/builtin-git",
+  "plugins/builtin-template-tera"
 ]
 
 #[lib]

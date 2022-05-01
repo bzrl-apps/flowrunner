@@ -459,6 +459,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "builtin-template-tera"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "async-trait",
+ "env_logger 0.8.4",
+ "flowrunner",
+ "json_ops",
+ "log",
+ "serde",
+ "serde_json",
+ "tera",
+ "tokio",
+]
+
+[[package]]
 name = "builtin-uri"
 version = "0.1.0"
 dependencies = [
