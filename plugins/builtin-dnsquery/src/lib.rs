@@ -3,7 +3,6 @@ use flowrunner::plugin::{Plugin, PluginExecResult, Status};
 use flowrunner::message::Message as FlowMessage;
 use flowrunner::return_plugin_exec_result_err;
 use flowrunner::datastore::store::BoxStore;
-use flowrunner::utils::*;
 
 extern crate json_ops;
 use json_ops::JsonOps;
