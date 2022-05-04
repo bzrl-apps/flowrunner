@@ -133,3 +133,6 @@ uuid = { version = "0.8", features = ["default", "v4"] }
 
 # Trust DNS
 trust-dns-client = "*"
+
+# Cronjob
+tokio-cron-scheduler = "0.7"

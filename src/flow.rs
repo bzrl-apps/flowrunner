@@ -30,6 +30,7 @@ use crate::datastore::store::StoreConfig;
 pub enum Kind {
     Action,
     Stream,
+    Cron,
 }
 
 // Implement trait Default for FlowKind
@@ -52,6 +53,8 @@ pub struct Flow {
 
     #[serde(default)]
     pub kind: Kind,
+    #[serde(default)]
+    pub schedule: String,
 
     #[serde(default)]
     pub datastore: Option<StoreConfig>,
@@ -212,8 +215,16 @@ impl Flow {
                 self.launch_job_threads().await;
                 self.launch_sink_threads().await;
             },
-            _ => {
-                info!("Flow kind: Action");
+            _ => { // Kind: Cron or Action but shares the same job configuration
+                if self.kind == Kind::Cron {
+                    info!("Flow kind: Cron");
+
+                    if self.schedule.is_empty() {
+                        return Err(anyhow!("Schedule must be specified for flow type Cron"));
+                    }
+                } else {
+                    info!("Flow kind: Action");
+                }
 
                 let jobs = self.jobs.clone();
                 for (i, mut job) in jobs.into_iter().enumerate() {
@@ -393,6 +404,23 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                 flow.kind = Kind::Stream;
             }
         }
+    }
+
+    if let Some(k) = mapping.get(&yamlValue::String("kind".to_string()))
+        .and_then(|s| s.as_str())
+        .and_then(|v| {
+            match v {
+                "stream" => Some(Kind::Stream),
+                "cron" => Some(Kind::Cron),
+                _ => Some(Kind::Action),
+            }
+        }) {
+        flow.kind = k;
+    }
+
+    if let Some(s) = mapping.get(&yamlValue::String("schedule".to_string()))
+        .and_then(|s| s.as_str()) {
+        flow.schedule = s.to_string();
     }
 
     if let Some(variables) = mapping.get(&yamlValue::String("variables".to_string())) {
