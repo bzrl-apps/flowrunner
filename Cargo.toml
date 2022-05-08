@@ -113,6 +113,10 @@ evalexpr = "7"
 rocksdb = { version = "0.18", default-features = false, features = ["serde", "zstd", "zlib", "snappy"] }
 openssl = { version = "0.10", features = ["vendored"] }
 
+# Moka cache
+moka = { version = "0.8", features = ["future"] }
+futures-util = "0.3"
+
 # sys-info
 sys-info = "0.9"
 

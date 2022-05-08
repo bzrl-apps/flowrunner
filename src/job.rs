@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Number, Value};
+use serde_json::{Map, Number, Value, json};
 
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
@@ -9,7 +9,10 @@ use evalexpr::*;
 use log::{info, debug, error, warn};
 
 //use tokio::sync::mpsc::*;
+use tokio::time::{sleep, Duration};
 use async_channel::*;
+
+use moka::future::Cache;
 
 use crate::datastore::store::{BoxStore, StoreConfig};
 use crate::plugin::{PluginRegistry, Status as PluginStatus};
@@ -27,7 +30,20 @@ macro_rules! job_result {
     }
 }
 
-#[derive(Default, Debug, Serialize, Deserialize, Clone)]
+#[derive(Clone, Serialize, Deserialize, Copy, Debug, PartialEq)]
+pub enum Status {
+    Ko = 0,
+    Ok = 1,
+}
+
+// Implement trait Default for Status
+impl Default for Status {
+    fn default() -> Self {
+        Status::Ok
+    }
+}
+
+#[derive(Default, Serialize, Deserialize, Clone)]
 pub struct Job {
     #[serde(default)]
 	pub name: String,
@@ -37,6 +53,9 @@ pub struct Job {
 	pub r#if: Option<String>,
     #[serde(default)]
 	pub start: Option<Task>,
+
+	#[serde(default)]
+	pub status: Status,
 
     #[serde(default)]
 	pub tasks: Vec<Task>,
@@ -49,7 +68,43 @@ pub struct Job {
     #[serde(skip_serializing, skip_deserializing)]
 	pub rx: Vec<Sender<FlowMessage>>,
     #[serde(skip_serializing, skip_deserializing)]
-	pub tx: Vec<Receiver<FlowMessage>>
+	pub tx: Vec<Receiver<FlowMessage>>,
+
+    // Options to control sequential execution mode
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+    #[serde(default = "default_wait_interval")]
+    pub wait_interval: u64,
+    #[serde(default = "default_wait_timeout")]
+    pub wait_timeout: u64,
+    #[serde(skip_serializing, skip_deserializing)]
+	pub cache: Option<Cache<String, Map<String, Value>>>
+}
+
+fn default_wait_interval() -> u64 {
+    3000
+}
+
+fn default_wait_timeout() -> u64 {
+    300000
+}
+
+impl std::fmt::Debug for Job {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Job")
+            .field("name", &self.name)
+            .field("hosts", &self.hosts)
+            .field("if", &self.r#if)
+            .field("start", &self.start)
+            .field("status", &self.status)
+            .field("tasks", &self.tasks)
+            .field("context", &self.context)
+            .field("result", &self.result)
+            .field("rx", &self.rx)
+            .field("tx", &self.tx)
+            //.field("cache", f.debug_map().
+            .finish()
+    }
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -83,7 +138,7 @@ impl PartialEq for Job {
 
 impl Job {
     pub async fn run(&mut self, tasks: Option<&str>, datastore: Option<StoreConfig>) -> Result<()> {
-        info!("JOB RUN STARTED: job: {}, hosts: {}, nb rx: {}, nb tx: {}", self.name, self.hosts, self.rx.len(), self.tx.len());
+        info!("JOB RUN STARTED: job={}, hosts={}, nb_rx={}, nb_tx={}", self.name, self.hosts, self.rx.len(), self.tx.len());
         debug!("Job context: {:?}", self.context);
 
         // Check the name of all tasks indicated in taskflow
@@ -94,40 +149,87 @@ impl Job {
         if !self.tx.is_empty() {
             loop {
                 // Reinit the current keys added when receiving each message
-                debug!("Reinitialize job's result: {}", self.name);
+                debug!("Reinitialize job's result: job={}", self.name);
                 self.result.clear();
 
                 match self.tx[0].recv().await {
                     // Add message received as data in job context
                     Ok(msg) => {
-                        let mut uuid = String::new();
-
-                        match msg {
+                        let uuid = match msg {
                             FlowMessage::JsonWithSender{ uuid: id, sender: s, source: src, value: v } => {
-                                uuid = id.clone();
-                                self.context.insert("uuid".to_string(), Value::String(id));
+                                self.context.insert("uuid".to_string(), Value::String(id.clone()));
                                 self.context.insert("sender".to_string(), Value::String(s));
                                 self.context.insert("source".to_string(), Value::String(src.unwrap_or_else(|| "".to_string())));
                                 self.context.insert("data".to_string(), v);
+
+                                id
                             },
                             _ => {
-                                error!("Message received is not Message::Json type");
+                                error!("Message received is not Message::Json type: job={}", self.name);
                                 continue;
                             },
-                       }
+                       };
+
+                        // We need to verify if the current job has any dependant jobs and all of
+                        // them are already executed.
+                        if !self.depends_on.is_empty() {
+                            info!("Waiting for depending jobs getting executed...: job={}, depends_on={:?}",
+                                  self.name, self.depends_on);
+
+                            let mut wait = true;
+                            while wait {
+                                wait = self.cache.clone()
+                                    .and_then(|c| c.get(&uuid))
+                                    .and_then(|v| {
+                                        debug!("Current cache value: job={}, uuid={}, value={:?}",
+                                               self.name, uuid, v);
+                                        let mut unsatisfied = false;
+                                        for j in self.depends_on.clone() {
+                                            if !v.contains_key(&j) {
+                                                unsatisfied = true
+                                            }
+                                        }
+
+                                        Some(unsatisfied)
+                                    })
+                                    .unwrap_or(true);
+                                info!("Waiting state: job={}, wait={}", self.name, wait);
+
+                                if wait {
+                                    info!("Start waiting for {}ms...: job={}", self.wait_interval, self.name);
+                                    sleep(Duration::from_millis(self.wait_interval)).await;
+                                }
+                            }
+                        }
 
                         // Run certain tasks given in parameter
                         if !ts.is_empty() {
                             if let Err(e) = self.run_task_by_task(ts, datastore.clone()).await {
-                                error!("{e}");
+                                error!("failed to run task by task: job={}, err={e}", self.name);
                                 continue;
                             }
                         } else {
                             // Run complete taskflow by running the first task
                             if let Err(e) = self.run_all_tasks(self.start.clone(), datastore.clone()).await {
-                                error!("{e}");
+                                error!("failed to run all tasks: job={}, err={e}", self.name);
                                 continue;
                             }
+                        }
+
+                        // Cache the result
+                        if let Some(cache) = self.cache.clone() {
+                            let mut job_result = cache.get(&uuid).unwrap_or(Map::new());
+
+                            debug!("Getting current cache value: job={}, uuid={}, value={:?}",
+                                   self.name, uuid, job_result);
+
+                            job_result.insert(self.name.clone(), json!({
+                                "status": self.status,
+                                "result": self.result
+                            }));
+
+                            info!("Updating job results cache: job={}, uuid={}", self.name, uuid);
+                            cache.insert(uuid.clone(), job_result).await;
                         }
 
                         for rx1 in self.rx.iter() {
@@ -139,7 +241,7 @@ impl Job {
                             };
                             match rx1.send(msg).await {
                                 Ok(()) => (),
-                                Err(e) => error!("{}", e.to_string()),
+                                Err(e) => error!("failed to send job's result: job={}, err={}", self.name, e.to_string()),
                             };
                         }
                     },
@@ -234,6 +336,9 @@ impl Job {
                     n if n > 0 => self.get_task_by_name(t.on_success.as_str()),
                     _ => None,
                 };
+            } else {
+                // Update job's status to Ko when a task failed
+                self.status = Status::Ko;
             }
         }
 
@@ -275,6 +380,11 @@ impl Job {
                                 self.result.insert(t.name.clone(), serde_json::to_value(res.clone())?);
 
                                 vec_res.push(serde_json::to_value(res.clone())?);
+
+                                // Update job's status to Ko when a task failed
+                                if res.status == PluginStatus::Ko {
+                                    self.status = Status::Ko;
+                                }
 
                                 info!("Task result: name {}, res: {:?}",  t.name.clone(), res);
                             }

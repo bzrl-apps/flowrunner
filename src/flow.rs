@@ -19,6 +19,8 @@ use crate::{
     sink::Sink,
 };
 
+use moka::future::Cache;
+
 use crate::message::Message as FlowMessage;
 use crate::datastore::store::StoreConfig;
 
@@ -53,7 +55,7 @@ pub struct Flow {
     pub datastore: Option<StoreConfig>,
 
     #[serde(default = "default_parallel")]
-    pub job_parallel: bool,
+    job_parallel: bool,
 
     #[serde(default)]
     pub sources: Vec<Source>,
@@ -127,10 +129,20 @@ impl Flow {
                     return Err(anyhow!("At least one source must be specified when using flow stream"));
                 }
 
+                // Init a cache for job results in sequential mode
+                let cache = if !self.job_parallel {
+                    Some(Cache::<String, Map<String, jsonValue>>::new(1024))
+                } else {
+                    None
+                };
+
                 // Create boundeds from sources to jobs according to
                 // the number of jobs. Each job will receive messages from all sources
                 let jobs = self.jobs.clone();
                 for (i, mut job) in jobs.into_iter().enumerate() {
+                    // Set job cache
+                    job.cache = cache.clone();
+
                     let (rx_src_job, tx_src_job) = bounded::<FlowMessage>(1024);
                     job.tx.push(tx_src_job);
 
@@ -224,11 +236,10 @@ impl Flow {
         let (tx, rx) = oneshot::channel();
 
         let jobs_cloned = self.jobs.clone();
-        let parallel_cloned = self.job_parallel.clone();
         let datastore_cloned = self.datastore.clone();
         tokio::spawn(async move {
             info!("Run all jobs...");
-            match run_all_jobs(parallel_cloned, jobs_cloned, datastore_cloned).await {
+            match run_all_jobs(jobs_cloned, datastore_cloned).await {
                 Ok(jobs) => {
                     if tx.send(jobs).is_err() {
                         error!("Sending jobs result: receiver dropped");
@@ -287,26 +298,34 @@ async fn run_all_sinks(sinks: Vec<Sink>) -> Result<()> {
     Ok(())
 }
 
-async fn run_all_jobs(parallel: bool, jobs: Vec<Job>, datastore: Option<StoreConfig>) -> Result<Vec<Job>> {
+async fn run_all_jobs(
+    jobs: Vec<Job>,
+    datastore: Option<StoreConfig>
+) -> Result<Vec<Job>> {
     let mut js = jobs.clone();
 
     for (i, j) in jobs.iter().enumerate() {
         info!("Executing job {}", j.name);
 
-        exec_job(parallel, &mut js, i, datastore.clone()).await?;
+        exec_job(&mut js, i, datastore.clone()).await?;
     }
 
     Ok(js.to_vec())
 }
 
-async fn exec_job(parallel: bool, jobs: &mut [Job], idx: usize, datastore: Option<StoreConfig>) -> Result<()> {
+async fn exec_job(
+    jobs: &mut [Job],
+    idx: usize,
+    datastore: Option<StoreConfig>
+) -> Result<()> {
     let mut job = jobs[idx].clone();
 
     if job.hosts.is_empty() || job.hosts == "localhost" || job.hosts == "127.0.0.1" {
-        if let Err(e) = exec_job_local(parallel, &mut job, datastore.clone()).await {
+        if let Err(e) = exec_job_local(&mut job, datastore.clone()).await {
             error!("exec_job_local: {e}");
         }
-        jobs[idx] = job;
+
+        jobs[idx] = job.clone();
 
         debug!("Job: {:?}", jobs[idx]);
 
@@ -316,26 +335,26 @@ async fn exec_job(parallel: bool, jobs: &mut [Job], idx: usize, datastore: Optio
     if let Err(e) = exec_job_remote(&mut job) {
         error!("exec_job_remote: {e}");
     }
+
     jobs[idx] = job;
 
     Ok(())
 }
 
-async fn exec_job_local(parallel: bool, job: &mut Job, datastore: Option<StoreConfig>) -> Result<()> {
+async fn exec_job_local(
+    job: &mut Job,
+    datastore: Option<StoreConfig>
+) -> Result<()> {
     info!("Executing locally the job {}", job.name);
 
-    if parallel {
-        let mut job_cloned = job.clone();
-        let datastore_cloned = datastore.clone();
-        tokio::spawn(async move {
-            match job_cloned.run(None, datastore_cloned).await {
-                Ok(()) => (),
-                Err(e) => error!("{}", e.to_string()),
-            }
-        });
-    } else {
-        job.run(None, datastore.clone()).await?;
-    }
+    let mut job_cloned = job.clone();
+    let datastore_cloned = datastore.clone();
+    tokio::spawn(async move {
+        match job_cloned.run(None, datastore_cloned).await {
+            Ok(()) => (),
+            Err(e) => error!("{}", e.to_string()),
+        }
+    });
 
     Ok(())
 }
@@ -364,10 +383,6 @@ fn parse(mapping: Mapping) -> Result<Flow> {
             }
         }
     }
-
-    flow.job_parallel = mapping.get(&yamlValue::String("job_parallel".to_string()))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
 
     if let Some(variables) = mapping.get(&yamlValue::String("variables".to_string())) {
         if let Some(vars) = variables.as_mapping() {
@@ -554,6 +569,30 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                             j.r#if = v.as_str().map(|s| s.to_string());
                         }
 
+                        // Check dependent jobs
+                        if let Some(v) = job.get(yamlValue::String("depends_on".to_string())) {
+                            j.depends_on = v.as_sequence()
+                                .and_then(|s| {
+                                    Some(s.iter().map(|v| v.as_str().unwrap_or_default().to_string()).collect())
+                                })
+                                .unwrap_or_default();
+                        }
+
+                        if !j.depends_on.is_empty() {
+                            warn!("{} has dependent jobs: {:?}. Sequential mode is enabled", j.name, j.depends_on);
+                            flow.job_parallel = false;
+                        }
+
+                        // Check wait_timeout
+                        j.wait_timeout = job.get(yamlValue::String("wait_timeout".to_string()))
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(300000);
+
+                        // Check wait_timeout
+                        j.wait_interval = job.get(yamlValue::String("wait_interval".to_string()))
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(3000);
+
                         let mut tasks: Vec<Task> = Vec::new();
 
                         if let Some(v) = job.get(yamlValue::String("tasks".to_string())) {
@@ -669,6 +708,16 @@ fn parse(mapping: Mapping) -> Result<Flow> {
         },
         None => Vec::new(),
     };
+
+    // Check if dependent jobs specified in each job exist
+    let job_names: Vec<String> = flow.jobs.iter().map(|v| v.name.clone()).collect();
+    if let Some(j) = flow.jobs.iter()
+        .filter(|v| !v.depends_on.is_empty())
+        .find(|v| {
+            v.depends_on.iter().any(|v| !job_names.contains(&v))
+        }) {
+        return Err(anyhow!(format!("{} has unknown dependent jobs: depends_on={:?}", j.name, j.depends_on)));
+    }
 
     // Parse SINKS
     flow.sinks = match mapping.get(&yamlValue::String("sinks".to_string())) {
