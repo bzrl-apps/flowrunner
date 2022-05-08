@@ -170,37 +170,8 @@ impl Job {
                             },
                        };
 
-                        // We need to verify if the current job has any dependant jobs and all of
-                        // them are already executed.
-                        if !self.depends_on.is_empty() {
-                            info!("Waiting for depending jobs getting executed...: job={}, depends_on={:?}",
-                                  self.name, self.depends_on);
-
-                            let mut wait = true;
-                            while wait {
-                                wait = self.cache.clone()
-                                    .and_then(|c| c.get(&uuid))
-                                    .and_then(|v| {
-                                        debug!("Current cache value: job={}, uuid={}, value={:?}",
-                                               self.name, uuid, v);
-                                        let mut unsatisfied = false;
-                                        for j in self.depends_on.clone() {
-                                            if !v.contains_key(&j) {
-                                                unsatisfied = true
-                                            }
-                                        }
-
-                                        Some(unsatisfied)
-                                    })
-                                    .unwrap_or(true);
-                                info!("Waiting state: job={}, wait={}", self.name, wait);
-
-                                if wait {
-                                    info!("Start waiting for {}ms...: job={}", self.wait_interval, self.name);
-                                    sleep(Duration::from_millis(self.wait_interval)).await;
-                                }
-                            }
-                        }
+                        // Wait for all dependent jobs be executed
+                        self.wait_dependend_jobs(&uuid).await;
 
                         // Run certain tasks given in parameter
                         if !ts.is_empty() {
@@ -259,6 +230,46 @@ impl Job {
         }
 
         Ok(())
+    }
+
+    async fn wait_dependend_jobs(&mut self, uuid: &String) {
+        // We need to verify if the current job has any dependant jobs and all of
+        // them are already executed.
+        if !self.depends_on.is_empty() {
+            info!("Waiting for depending jobs getting executed...: job={}, depends_on={:?}",
+                    self.name, self.depends_on);
+
+            let mut wait = true;
+            while wait {
+                wait = self.cache.clone()
+                    .and_then(|c| c.get(uuid))
+                    .and_then(|v| {
+                        debug!("Current cache value: job={}, uuid={}, value={:?}",
+                                self.name, uuid, v);
+                        let mut unsatisfied = false;
+                        for j in self.depends_on.clone() {
+                            if !v.contains_key(&j) {
+                                unsatisfied = true
+                            }
+                        }
+
+                        // When all dependent jobs are executed, we need to update context their
+                        // results to be used in the next job's template rendering
+                        if !unsatisfied {
+                            self.context.insert("job_results".to_string(), Value::Object(v));
+                        }
+
+                        Some(unsatisfied)
+                    })
+                    .unwrap_or(true);
+                info!("Waiting state: job={}, wait={}", self.name, wait);
+
+                if wait {
+                    info!("Start waiting for {}ms...: job={}", self.wait_interval, self.name);
+                    sleep(Duration::from_millis(self.wait_interval)).await;
+                }
+            }
+        }
     }
 
     async fn run_all_tasks(&mut self, start: Option<Task>, datastore: Option<StoreConfig>) -> Result<()> {
