@@ -10,6 +10,7 @@ use anyhow::{anyhow, Result};
 
 use async_channel::*;
 use tokio::sync::*;
+use tokio::time::Duration;
 
 use crate::datastore::store::StoreNamespace;
 use crate::{
@@ -190,15 +191,20 @@ impl Flow {
                 // such as http-server, we need set the same job's receiver for source and sink.
                 let srcs = self.sources.clone();
                 for (i, mut src) in srcs.into_iter().enumerate() {
-                    let (rx_job_src, tx_job_src) = bounded::<FlowMessage>(1024);
-                    src.tx.push(tx_job_src);
+                    if src.params.get("is_also_sink")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or_default() {
 
-                    self.sources[i] = src;
+                        let (rx_job_src, tx_job_src) = bounded::<FlowMessage>(1024);
+                        src.tx.push(tx_job_src);
 
-                    let jobs = self.jobs.clone();
-                    for (j, mut job) in jobs.into_iter().enumerate() {
-                        job.rx.push(rx_job_src.clone());
-                        self.jobs[j] = job;
+                        self.sources[i] = src;
+
+                        let jobs = self.jobs.clone();
+                        for (j, mut job) in jobs.into_iter().enumerate() {
+                            job.rx.push(rx_job_src.clone());
+                            self.jobs[j] = job;
+                        }
                     }
                 }
 
