@@ -132,7 +132,10 @@ impl Flow {
 
                 // Init a cache for job results in sequential mode
                 let cache = if !self.job_parallel {
-                    Some(Cache::<String, Arc<Mutex<Map<String, jsonValue>>>>::new(1024))
+                    Some(Cache::<String, Arc<Mutex<Map<String, jsonValue>>>>::builder()
+                         .max_capacity(1024)
+                         .time_to_live(Duration::from_secs(10 * 60))
+                         .build())
                 } else {
                     None
                 };
