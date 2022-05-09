@@ -377,6 +377,7 @@ fn exec_job_remote(job: &mut Job) -> Result<()> {
 
 fn parse(mapping: Mapping) -> Result<Flow> {
     let mut flow = Flow::default();
+    flow.job_parallel = true;
 
     if let Some(s) = mapping.get(&yamlValue::String("name".to_string())) {
         if let Some(v) = s.as_str() {
