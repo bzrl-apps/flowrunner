@@ -9,10 +9,11 @@ use evalexpr::*;
 use log::{info, debug, error, warn};
 
 //use tokio::sync::mpsc::*;
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, Duration, timeout};
 use async_channel::*;
 
 use moka::future::Cache;
+use std::sync::{Arc, Mutex};
 
 use crate::datastore::store::{BoxStore, StoreConfig};
 use crate::plugin::{PluginRegistry, Status as PluginStatus};
@@ -78,7 +79,7 @@ pub struct Job {
     #[serde(default = "default_wait_timeout")]
     pub wait_timeout: u64,
     #[serde(skip_serializing, skip_deserializing)]
-	pub cache: Option<Cache<String, Map<String, Value>>>
+	pub cache: Option<Cache<String, Arc<Mutex<Map<String, Value>>>>>
 }
 
 fn default_wait_interval() -> u64 {
@@ -149,8 +150,10 @@ impl Job {
         if !self.tx.is_empty() {
             loop {
                 // Reinit the current keys added when receiving each message
-                debug!("Reinitialize job's result: job={}", self.name);
+                debug!("Reinitialize job's status, result & context: job={}, status={:?}", self.name, self.status);
+                self.status = Status::default();
                 self.result.clear();
+                self.context.clear();
 
                 match self.tx[0].recv().await {
                     // Add message received as data in job context
@@ -171,36 +174,60 @@ impl Job {
                        };
 
                         // Wait for all dependent jobs be executed
-                        self.wait_dependend_jobs(&uuid).await;
+                        if let Err(e) = timeout(Duration::from_millis(self.wait_timeout),
+                                                self.wait_dependend_jobs(&uuid))
+                            .await {
+                            error!("Timeout to wait for dependent jobs getting executed: job={}, timeout={}, err={e}",
+                                   self.name,
+                                   self.wait_timeout);
+                            continue;
+                        }
 
                         // Run certain tasks given in parameter
-                        if !ts.is_empty() {
-                            if let Err(e) = self.run_task_by_task(ts, datastore.clone()).await {
-                                error!("failed to run task by task: job={}, err={e}", self.name);
-                                continue;
-                            }
+                        let (res, msg_err) = if !ts.is_empty() {
+                            (self.run_task_by_task(ts, datastore.clone()).await,
+                            "failed to run task by task".to_string())
                         } else {
                             // Run complete taskflow by running the first task
-                            if let Err(e) = self.run_all_tasks(self.start.clone(), datastore.clone()).await {
-                                error!("failed to run all tasks: job={}, err={e}", self.name);
-                                continue;
-                            }
-                        }
+                            (self.run_all_tasks(self.start.clone(), datastore.clone()).await,
+                            "failed to run all tasks".to_string())
+                        };
 
                         // Cache the result
                         if let Some(cache) = self.cache.clone() {
-                            let mut job_result = cache.get(&uuid).unwrap_or(Map::new());
+                            let uuid_cloned = uuid.clone();
+                            let name_cloned = self.name.clone();
+                            let status_cloned = self.status.clone();
+                            let result_cloned = self.result.clone();
+                            let mut job_result = cache.get_with(uuid_cloned, async move {
+                                let mut jr = Map::new();
+                                jr.insert(name_cloned, json!({
+                                    "status": status_cloned,
+                                    "result": result_cloned
+                                }));
+                                Arc::new(Mutex::new(jr))
+                            }).await;
 
-                            debug!("Getting current cache value: job={}, uuid={}, value={:?}",
-                                   self.name, uuid, job_result);
+                            debug!("Getting current cache value before update: job={}, uuid={}, value={:?}",
+                                   self.name, uuid, job_result.lock().unwrap());
 
-                            job_result.insert(self.name.clone(), json!({
+                            job_result.lock().unwrap().insert(self.name.clone(), json!({
                                 "status": self.status,
                                 "result": self.result
                             }));
 
                             info!("Updating job results cache: job={}, uuid={}", self.name, uuid);
                             cache.insert(uuid.clone(), job_result).await;
+
+                            job_result = cache.get(&uuid).unwrap_or(Arc::new(Mutex::new(Map::new())));
+                            debug!("Getting cache value after update: job={}, uuid={}, value={:?}",
+                                   self.name, uuid, job_result.lock().unwrap());
+                        }
+
+                        // If job run encounter errors, zap to next message
+                        if let Err(e) = res {
+                            error!("{}: job={}, err={e}", msg_err, self.name);
+                            continue;
                         }
 
                         for rx1 in self.rx.iter() {
@@ -246,9 +273,12 @@ impl Job {
                     .and_then(|v| {
                         debug!("Current cache value: job={}, uuid={}, value={:?}",
                                 self.name, uuid, v);
+
+                        let job_results = v.lock().unwrap();
+
                         let mut unsatisfied = false;
                         for j in self.depends_on.clone() {
-                            if !v.contains_key(&j) {
+                            if !(*job_results).contains_key(&j) {
                                 unsatisfied = true
                             }
                         }
@@ -256,7 +286,7 @@ impl Job {
                         // When all dependent jobs are executed, we need to update context their
                         // results to be used in the next job's template rendering
                         if !unsatisfied {
-                            self.context.insert("job_results".to_string(), Value::Object(v));
+                            self.context.insert("job_results".to_string(), Value::Object((*job_results).clone()));
                         }
 
                         Some(unsatisfied)

@@ -20,6 +20,7 @@ use crate::{
 };
 
 use moka::future::Cache;
+use std::sync::{Arc, Mutex};
 
 use crate::message::Message as FlowMessage;
 use crate::datastore::store::StoreConfig;
@@ -131,7 +132,7 @@ impl Flow {
 
                 // Init a cache for job results in sequential mode
                 let cache = if !self.job_parallel {
-                    Some(Cache::<String, Map<String, jsonValue>>::new(1024))
+                    Some(Cache::<String, Arc<Mutex<Map<String, jsonValue>>>>::new(1024))
                 } else {
                     None
                 };
