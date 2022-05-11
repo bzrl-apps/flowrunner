@@ -1,3 +1,29 @@
+## [0.11.0](https://github.com/bzrl-apps/flowrunner/compare/v0.10.0...v0.11.0) (2022-05-11)
+
+
+### 🐛 Bug Fixes
+
+* **builtin-dnsquery:** loop query response's answers instead of the 1st ([7b5935f](https://github.com/bzrl-apps/flowrunner/commit/7b5935f04be902ec620e095b2a08b7d7383d6379))
+* **core:** only sources with sink capability can receive job msgs ([5b89b06](https://github.com/bzrl-apps/flowrunner/commit/5b89b063a6bfedd1ff8f8dbbae875a47fe5f2703))
+* **core:** set job_parallel option to true before parsing ([2b8b7ee](https://github.com/bzrl-apps/flowrunner/commit/2b8b7ee300faa8e134c424b18144ed2466bf3efe))
+* **core:** use arc & mutex to store map of job results in cache ([7bc741e](https://github.com/bzrl-apps/flowrunner/commit/7bc741ef4f0e1b905a54b9f42e2553b171514500))
+
+
+### 🚀 Features
+
+* **builtin-dnsquery:** init dnsquery plugin ([4499d0f](https://github.com/bzrl-apps/flowrunner/commit/4499d0f97007777425d7364cfd8a2747c76eaf22)), closes [#49](https://github.com/bzrl-apps/flowrunner/issues/49)
+* **builtin-git:** init git plugin ([9f4c599](https://github.com/bzrl-apps/flowrunner/commit/9f4c599d4db411457f069dc5672ea74faf42f03a)), closes [#50](https://github.com/bzrl-apps/flowrunner/issues/50)
+* **builtin-httpserver:** implement handlers for GET/POST/PUT/DELETE ([6c65ac4](https://github.com/bzrl-apps/flowrunner/commit/6c65ac49aa992de7e806b8dcd9bda9769fdfecaf)), closes [#47](https://github.com/bzrl-apps/flowrunner/issues/47)
+* **builtin-httpserver:** init plugin http server ([6c328c9](https://github.com/bzrl-apps/flowrunner/commit/6c328c9a3c8318e6a51eebaba0d155d6bad31d68))
+* **builtin-template-tera:** init template rendering with Tera ([37ddf56](https://github.com/bzrl-apps/flowrunner/commit/37ddf56a91f2bf4e3e4269b8c8b596586a6bb9db)), closes [#51](https://github.com/bzrl-apps/flowrunner/issues/51)
+* **core:** add UUID to FlowMessage::JsonWithSender to trace msg exchanges ([ce7be79](https://github.com/bzrl-apps/flowrunner/commit/ce7be7991882f64828780637677cc26e91740cf2))
+* **core:** allow a source to receive job's messages as a sink ([038d004](https://github.com/bzrl-apps/flowrunner/commit/038d004b75a2bbd2bf1eb90f4d50e66e2c8d34d9))
+* **core:** give job access to the cache in sequential mode via context ([9da1186](https://github.com/bzrl-apps/flowrunner/commit/9da11861756476d51a4cd3be51d0958592d6489b)), closes [#55](https://github.com/bzrl-apps/flowrunner/issues/55)
+* **core:** handle sequential job execution with Moka cache ([8acbb9e](https://github.com/bzrl-apps/flowrunner/commit/8acbb9e81422e7689671fba9d087e7bdae3e081f))
+* **core:** set timeout for checking the execution of dependend jobs ([b161464](https://github.com/bzrl-apps/flowrunner/commit/b161464b98bce0ab1aaca707a37a3ed5d7146823))
+* **cron:** add a cron server ([ffa20ca](https://github.com/bzrl-apps/flowrunner/commit/ffa20ca576b2daa222ba1b3467be2781d64e408f)), closes [#12](https://github.com/bzrl-apps/flowrunner/issues/12)
+* **flow:** add option to run jobs sequentially ([ff0b24f](https://github.com/bzrl-apps/flowrunner/commit/ff0b24fbe4eeb5c134ef966ade0bd7abf93f18bf)), closes [#28](https://github.com/bzrl-apps/flowrunner/issues/28)
+
 ## [0.10.0](https://github.com/bzrl-apps/flowrunner/compare/v0.9.0...v0.10.0) (2022-04-19)
 
 
