@@ -1,8 +1,5 @@
-use clap::ArgMatches;
-
 use anyhow::{anyhow, Result};
 use tokio::signal;
-use log::{error, info};
 
 use std::fs;
 use std::collections::HashMap;
@@ -23,39 +20,39 @@ pub async fn cron_run(config: &Config) -> Result<()> {
         if let Some(p) = path?.path().to_str() {
             let flow = Flow::new_from_file(p)?;
 
-            debug!("{:#?}", flow);
             if flow.kind == Kind::Cron {
                 if flows.contains_key(&flow.name.clone()) {
-                    panic!("The flow {} already exists", flow.name);
+                    panic!("The flow already exists: flow={}", flow.name);
                 }
 
-                info!("Registering the flow {} ...", flow.name);
+                info!("Registering flow...: flow={}", flow.name);
                 flows.insert(flow.name.clone(), flow.clone());
 
                 let schedule = flow.schedule.clone();
                 let flow_cloned = flow.clone();
+
+                info!("Adding new scheduled job: flow={}, schedule={}", flow.name, schedule);
                 let mut job = Job::new_async(
                     schedule.as_str(),
                     //"1/4 * * * * *",
                     move |_uuid, _lock| {
                         let mut flow_cloned = flow_cloned.clone();
                         Box::pin(async move {
-                            println!("{:?} I run async every 4 seconds", chrono::Utc::now());
-                            let _ = flow_cloned.run().await;
-                            info!{"flow result: {:#?}", flow_cloned};
+                            if let Err(e) = flow_cloned.run().await {
+                                error!("Failed to run the flow: err={e}")
+                            }
+
+                            info!{"flow result: res={:?}", flow_cloned};
                         })
                     }
                 )?;
-                //let mut job = Job::new_async("1/4 * * * * *", |_uuid, _l| Box::pin(async move {
-                    //println!("{:?} I run async every 4 seconds", chrono::Utc::now());
-                    //})).unwrap();
 
                 // Add job notifications
                 job.on_start_notification_add(
                     &scheduler,
                     Box::new(move |job_id, notification_id, type_of_notification| {
                         Box::pin(async move {
-                            info!("Job {:?} ran on start notification {:?} ({:?})", job_id, notification_id, type_of_notification);
+                            info!("Job starts running: job_id={:?}, notif_id={:?}, notif_type={:?}", job_id, notification_id, type_of_notification);
                         })
                     })
                 )?;
@@ -64,7 +61,7 @@ pub async fn cron_run(config: &Config) -> Result<()> {
                     Box::new(|job_id, notification_id, type_of_notification| {
                         Box::pin(async move {
                             info!(
-                                "Job {:?} completed and ran notification {:?} ({:?})",
+                                "Job completed: job_id={:?}, notif_id={:?}, notif_type={:?}",
                                 job_id, notification_id, type_of_notification
                             );
                         })
@@ -78,16 +75,18 @@ pub async fn cron_run(config: &Config) -> Result<()> {
 
     scheduler.set_shutdown_handler(Box::new(|| {
       Box::pin(async move {
-        println!("Shut down done");
+        info!("Flow shut down done");
       })
     }));
 
-    scheduler.start();
+    if let Err(e) = scheduler.start() {
+        panic!("Failed to start scheduler: err={}", e);
+    }
 
     match signal::ctrl_c().await {
         Ok(()) => Ok(()),
         Err(e) => {
-            error!("Unable to listen for shutdown signal: {}", e);
+            error!("Unable to listen for shutdown signal: err={}", e);
             // we also shut down in case of error
             Err(anyhow!(e))
         },
