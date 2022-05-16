@@ -118,8 +118,11 @@ pub struct Task {
     pub plugin: String,
     #[serde(default)]
 	pub params: Map<String, Value>,
+
     #[serde(default)]
 	pub r#loop: Option<Value>,
+    #[serde(default)]
+	pub loop_tempo: Option<u64>,
 
     #[serde(default)]
 	pub on_success: String,
@@ -315,7 +318,7 @@ impl Job {
 
         // Execute task
         while let Some(mut t) = next_task.to_owned() {
-            info!("Task executed: name {}, params {:?}", t.name, t.params);
+            info!("Task will be executed: name {}, params {:?}", t.name, t.params);
 
             let mut task_result = PluginStatus::Ok;
 
@@ -331,6 +334,8 @@ impl Job {
                 continue;
             }
 
+            debug!("Task's params array: len={}, params={:?}", vec_params.len(), vec_params);
+
             // Init datastore if configured
             let mut bs: Option<BoxStore> = None;
 
@@ -343,6 +348,7 @@ impl Job {
                     let mut vec_res: Vec<Value> = Vec::new();
 
                     for p in vec_params.iter() {
+                        debug!("Treating params array item: p={:?}", p);
                         plugin.validate_params(p.clone())?;
                         plugin.set_datastore(bs.clone());
                         let res = plugin.func(Some(self.name.clone()), &self.rx, &self.tx).await;
@@ -359,6 +365,12 @@ impl Job {
 
                             task_result = PluginStatus::Ko;
                             break;
+                        }
+
+                        // Check if loop_tempo is set
+                        if let Some(tempo) = t.loop_tempo {
+                            debug!("Waiting for the next execution: tempo={}", tempo);
+                            std::thread::sleep(Duration::from_millis(tempo));
                         }
                     }
 

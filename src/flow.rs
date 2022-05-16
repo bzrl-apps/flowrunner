@@ -661,7 +661,7 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                                             v2.remove(&yaml_value_if);
                                         }
 
-                                        // Check if condition
+                                        // Check loop
                                         let yaml_value_loop = yamlValue::String("loop".to_string());
                                         if let Some(n) = v2.get(&yaml_value_loop) {
                                             t.r#loop = match n.as_sequence() {
@@ -679,6 +679,15 @@ fn parse(mapping: Mapping) -> Result<Flow> {
 
                                             v2.remove(&yaml_value_loop);
                                         }
+
+                                        // Check loop_tempo
+                                        let yaml_value_loop_tempo = yamlValue::String("loop_tempo".to_string());
+                                        t.loop_tempo = v2.get(&yaml_value_loop_tempo)
+                                            .and_then(|v| v.as_u64())
+                                            .map(|v| {
+                                                v2.remove(&yaml_value_loop_tempo);
+                                                v
+                                            });
 
                                         // Check on_success
                                         let yaml_value_on_success = yamlValue::String("on_success".to_string());
