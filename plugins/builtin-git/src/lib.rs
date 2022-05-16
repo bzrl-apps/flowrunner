@@ -166,12 +166,12 @@ impl Plugin for GitRepo {
                 }
 
                 if v.mode == "userpass" {
-                    if !v.config.contains_key("username") || !v.config.contains_key("password") {
-                        return Err(anyhow!("Auth config must specify user & password for the userpass method"));
+                    if !v.config.contains_key("password") {
+                        return Err(anyhow!("Auth config must specify password for the userpass method"));
                     }
                 } else {
-                    if !v.config.contains_key("username") || !v.config.contains_key("private_key") {
-                        return Err(anyhow!("Auth config must have username & private_key for ssh method"));
+                    if !v.config.contains_key("private_key") {
+                        return Err(anyhow!("Auth config must have private_key for ssh method"));
                     }
                 }
 
