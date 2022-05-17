@@ -224,10 +224,10 @@ impl Plugin for GitRepo {
         // Initialize tracing
         //tracing_subscriber::fmt::init();
 
-        // If remote_url is not empty => clone remote
+        // If remote_url is not empty  & local_dir doesnot exist => clone remote
         // If remote_url is empty => open with local_dir
-        let repo = if !self.remote_url.is_empty() {
-            let callbacks = configure_remote_callbacks(&self.auth);
+        let repo = if !self.remote_url.is_empty() && !Path::new(self.local_dir.as_str()).exists() {
+            let callbacks = configure_remote_callbacks(self.username.as_str(), &self.auth);
             // Prepare fetch options.
             let mut fo = git2::FetchOptions::new();
             fo.remote_callbacks(callbacks);
@@ -238,6 +238,7 @@ impl Plugin for GitRepo {
             builder.branch(self.branch.as_str());
 
             // Clone the project.
+            info!("Cloning repository: remote_url={}, local_dir={}", self.remote_url, self.local_dir);
             match builder.clone(
                 self.remote_url.as_str(),
                 Path::new(self.local_dir.as_str()),
@@ -246,8 +247,18 @@ impl Plugin for GitRepo {
                 Err(e) => return_plugin_exec_result_err!(result, e.to_string()),
             }
         } else {
+            info!("Opening the local repository: local_dir={}", self.local_dir);
             match Repository::open(Path::new(self.local_dir.as_str())) {
-                Ok(v) => v,
+                Ok(v) => {
+                    info!("Pulling to update the local repository: local_dir={}", self.local_dir);
+                    if self.update {
+                        if let Err(e) = repo_pull(&v, &self) {
+                            return_plugin_exec_result_err!(result, e.to_string());
+                        }
+                    }
+
+                    v
+                },
                 Err(e) => return_plugin_exec_result_err!(result, e.to_string()),
             }
         };
@@ -261,11 +272,7 @@ impl Plugin for GitRepo {
                     }
                 },
                 "pull" => {
-                    if let Err(e) = repo_fetch(&repo, &self) {
-                        return_plugin_exec_result_err!(result, e.to_string());
-                    }
-
-                    if let Err(e) = repo_merge(&repo, &self) {
+                    if let Err(e) = repo_pull(&repo, &self) {
                         return_plugin_exec_result_err!(result, e.to_string());
                     }
                 }
@@ -302,16 +309,11 @@ impl Plugin for GitRepo {
     }
 }
 
-fn configure_remote_callbacks(auth_config: &Option<Auth>) -> RemoteCallbacks {
-
+fn configure_remote_callbacks<'a>(username: &'a str, auth_config: &'a Option<Auth>) -> RemoteCallbacks<'a> {
     // Prepare callbacks.
     let mut callbacks = RemoteCallbacks::new();
 
     if let Some(auth) = auth_config {
-        let username = auth.config.get("username")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-
         if auth.mode == "ssh" {
             let private_key = auth.config.get("private_key")
                 .and_then(|v| v.as_str())
@@ -340,9 +342,8 @@ fn configure_remote_callbacks(auth_config: &Option<Auth>) -> RemoteCallbacks {
 }
 
 fn repo_fetch(repo: &Repository, config: &GitRepo) -> Result<()> {
-
     // Prepare fetch options.
-    let callbacks = configure_remote_callbacks(&config.auth);
+    let callbacks = configure_remote_callbacks(config.username.as_str(), &config.auth);
     let mut fo = git2::FetchOptions::new();
     fo.remote_callbacks(callbacks);
 
@@ -534,6 +535,14 @@ fn repo_do_normal_merge(
 
     // Set working tree to match head.
     repo.checkout_head(None)?;
+
+    Ok(())
+}
+
+fn repo_pull(repo: &Repository, config: &GitRepo) -> Result<()> {
+    repo_fetch(repo, config)?;
+
+    repo_merge(repo, config)?;
 
     Ok(())
 }
