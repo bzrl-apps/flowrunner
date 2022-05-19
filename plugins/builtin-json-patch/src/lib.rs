@@ -75,8 +75,8 @@ impl Plugin for JsonPatch {
                 // Check each operation
                 for o in v.iter() {
                     // Check if path or action is empty
-                    if o.path.is_empty() || o.action.is_empty() {
-                        return Err(anyhow!("Path or Op must not be empty"));
+                    if o.action.is_empty() {
+                        return Err(anyhow!("Op must not be empty"));
                     }
 
                     // Check if op is supported
@@ -84,6 +84,12 @@ impl Plugin for JsonPatch {
 
                     if !ops.contains(&o.action.as_str()) {
                         return Err(anyhow!("Op must have one of the following values: add, replace & remove"));
+                    }
+
+                    // Path can be only empty when action is add for array
+                    if o.path.is_empty() &&
+                        (o.action.as_str() == "replace" || o.action.as_str() == "remove") {
+                        return Err(anyhow!("Path must be specified for actions: replace & remove"));
                     }
 
                     // Check if value is None when action is add or replace
