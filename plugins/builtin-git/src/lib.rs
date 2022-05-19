@@ -226,7 +226,13 @@ impl Plugin for GitRepo {
 
         // If remote_url is not empty  & local_dir doesnot exist => clone remote
         // If remote_url is empty => open with local_dir
-        let repo = if !self.remote_url.is_empty() && !Path::new(self.local_dir.as_str()).exists() {
+        let local_dir_path = Path::new(self.local_dir.as_str());
+        let repo = if !self.remote_url.is_empty() && !local_dir_path.exists() {
+            // Create the local_dir
+            if let Err(e) = std::fs::create_dir_all(local_dir_path) {
+                return_plugin_exec_result_err!(result, e.to_string());
+            }
+
             let callbacks = configure_remote_callbacks(self.username.as_str(), &self.auth);
             // Prepare fetch options.
             let mut fo = git2::FetchOptions::new();
@@ -248,7 +254,7 @@ impl Plugin for GitRepo {
             }
         } else {
             info!("Opening the local repository: local_dir={}", self.local_dir);
-            match Repository::open(Path::new(self.local_dir.as_str())) {
+            match Repository::open(local_dir_path) {
                 Ok(v) => {
                     info!("Pulling to update the local repository: local_dir={}", self.local_dir);
                     if self.update {
