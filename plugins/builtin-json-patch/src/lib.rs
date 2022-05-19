@@ -125,8 +125,13 @@ impl Plugin for JsonPatch {
         let mut json_ops = JsonOps::new(v_target);
 
         for (idx, op) in self.patch.iter().enumerate() {
+            // Convert string correctly to value
+            let val: Option<Value> = op.value.as_ref()
+                .and_then(|v| v.as_str())
+                .and_then(|v| serde_json::from_str(v).ok());
+
             if op.action == "replace" {
-                if let Some(v) = op.value.clone() {
+                if let Some(v) = val.clone() {
                     if let Err(e) = json_ops.set_value_by_path(op.path.as_str(), v) {
                         return_plugin_exec_result_err!(result, format!("op[{}], path {}: {}", idx, op.path, e));
                     }
@@ -136,7 +141,7 @@ impl Plugin for JsonPatch {
             }
 
             if op.action == "add" {
-                if let Some(v) = op.value.clone() {
+                if let Some(v) = val.clone() {
                     if let Err(e) = json_ops.add_value_by_path(op.path.as_str(), v) {
                         return_plugin_exec_result_err!(result, format!("op[{}], path {}: {}", idx, op.path, e));
                     }
