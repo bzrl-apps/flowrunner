@@ -238,9 +238,9 @@ jobs:
           PLATFORM: linux/amd64,linux/arm64
         run: npx -p conventional-changelog-conventionalcommits -p @semantic-release/changelog -p @semantic-release/git -p @semantic-release/exec -p @semantic-release/github -p semantic-release semantic-release
 
-      #- name: Update back next
-        #run: |
-          #git checkout next
-          #git pull origin next
-          #git merge --no-ff master next -X theirs -m "chore(merge): auto merge master to next"
-          #git push origin next
+      - name: Update back next
+        run: |
+          git checkout next
+          git pull origin next
+          git merge --no-ff master next -X theirs -m "chore(merge): auto merge master to next"
+          git push origin next
