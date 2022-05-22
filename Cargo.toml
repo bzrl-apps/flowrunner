@@ -41,7 +41,8 @@ members = [
   "plugins/builtin-httpserver",
   "plugins/builtin-dnsquery",
   "plugins/builtin-git",
-  "plugins/builtin-template-tera"
+  "plugins/builtin-template-tera",
+  "plugins/builtin-lineinfile"
 ]
 
 #[lib]
