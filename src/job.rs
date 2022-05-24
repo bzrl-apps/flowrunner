@@ -159,17 +159,25 @@ impl Job {
                 debug!("Reinitialize job's status, result & context: job={}, status={:?}", self.name, self.status);
                 self.status = Status::default();
                 self.result.clear();
-                self.context.clear();
+                let _ = self.context.remove("msg_id");
+                let _ = self.context.remove("register");
+                let _ = self.context.remove("user_payload");
 
                 match self.tx[0].recv().await {
                     // Add message received as data in job context
                     Ok(msg) => {
                         let uuid = match msg {
                             FlowMessage::JsonWithSender{ uuid: id, sender: s, source: src, value: v } => {
-                                self.context.insert("uuid".to_string(), Value::String(id.clone()));
-                                self.context.insert("sender".to_string(), Value::String(s));
-                                self.context.insert("source".to_string(), Value::String(src.unwrap_or_else(|| "".to_string())));
-                                self.context.insert("data".to_string(), v);
+                                let mut msg_id = self.context
+                                    .get("msg_id")
+                                    .and_then(|v| v.as_object())
+                                    .unwrap_or(&Map::new()).to_owned();
+                                msg_id.insert("uuid".to_string(), Value::String(id.clone()));
+                                msg_id.insert("sender".to_string(), Value::String(s));
+                                msg_id.insert("source".to_string(), Value::String(src.unwrap_or_else(|| "".to_string())));
+                                msg_id.insert("data".to_string(), v);
+
+                                self.context.insert("msg_id".to_string(), Value::Object(msg_id));
 
                                 id
                             },

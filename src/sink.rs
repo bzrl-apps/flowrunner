@@ -56,10 +56,16 @@ impl Sink {
                     Ok(msg) => {
                         match msg {
                             FlowMessage::JsonWithSender{ uuid: id, sender: s, source: src, value: v } => {
-                                self.context.insert("uuid".to_string(), Value::String(id));
-                                self.context.insert("sender".to_string(), Value::String(s));
-                                self.context.insert("source".to_string(), Value::String(src.unwrap_or_else(|| "".to_string())));
-                                self.context.insert("data".to_string(), v);
+                                let mut msg_id = self.context
+                                    .get("msg_id")
+                                    .and_then(|v| v.as_object())
+                                    .unwrap_or(&Map::new()).to_owned();
+                                msg_id.insert("uuid".to_string(), Value::String(id));
+                                msg_id.insert("sender".to_string(), Value::String(s));
+                                msg_id.insert("source".to_string(), Value::String(src.unwrap_or_else(|| "".to_string())));
+                                msg_id.insert("data".to_string(), v);
+                                
+                                self.context.insert("msg_id".to_string(), Value::Object(msg_id));
                             },
                             _ => {
                                 error!("Message received is not Message::JsonWithSender type");
@@ -136,7 +142,7 @@ impl Sink {
 
         // Expand task's params
         for (n, v) in sink.params.clone().into_iter() {
-            sink.params.insert(n.to_string(), render_param_template(sink.name.as_str(), &n, &v, &data)?);
+            sink.params.insert(n.to_string(), render_value_template(sink.name.as_str(), &n, &v, &data)?);
         }
 
         Ok(true)

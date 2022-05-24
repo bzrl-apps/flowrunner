@@ -85,7 +85,7 @@ impl Source {
 
         // Expand task's params
         for (n, v) in source.params.clone().into_iter() {
-            source.params.insert(n.to_string(), render_param_template(source.name.as_str(), &n, &v, &data)?);
+            source.params.insert(n.to_string(), render_value_template(source.name.as_str(), &n, &v, &data)?);
         }
 
         Ok(true)
