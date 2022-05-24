@@ -91,8 +91,8 @@ pub fn expand_env_value(value: &Value) -> Value {
     }
 }
 
-pub fn render_param_template(component: &str, key: &str, value: &Value, data: &Map<String, Value>) -> Result<Value> {
-    debug!("Rendering param templating: component {}, key {}, value {:?}, data {:?}", component, key, value, data);
+pub fn render_value_template(component: &str, key: &str, value: &Value, data: &Map<String, Value>) -> Result<Value> {
+    debug!("Rendering value templating: component {}, key {}, value {:?}, data {:?}", component, key, value, data);
 
     let mut tera = Tera::default();
     tera.register_function("generate_uuid", gen_uuid);
@@ -108,7 +108,7 @@ pub fn render_param_template(component: &str, key: &str, value: &Value, data: &M
         Value::Array(arr) => {
             let mut v: Vec<Value> = vec![];
             for e in arr.into_iter() {
-                let rendered_v = render_param_template(component, key, &e, data)?;
+                let rendered_v = render_value_template(component, key, &e, data)?;
                 v.push(rendered_v);
             }
 
@@ -117,7 +117,7 @@ pub fn render_param_template(component: &str, key: &str, value: &Value, data: &M
         Value::Object(map) => {
             let mut m: Map<String, Value> = Map::new();
             for (k, v) in map.into_iter() {
-                let rendered_v = render_param_template(component, key, &v, data)?;
+                let rendered_v = render_value_template(component, key, &v, data)?;
                 m.insert(k.to_string(), rendered_v);
             }
 

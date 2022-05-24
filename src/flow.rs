@@ -689,6 +689,24 @@ fn parse(mapping: Mapping) -> Result<Flow> {
                                                 v
                                             });
 
+                                        // Check register
+                                        let yaml_value_register = yamlValue::String("register".to_string());
+                                        t.register = v2.get(&yaml_value_register)
+                                            .and_then(|v| v.as_mapping())
+                                            .map(|v| {
+                                                let mut vars = Map::new();
+                                                for (k1, v1) in v.iter() {
+                                                    vars.insert(
+                                                        k1.as_str().unwrap_or("").to_string(),
+                                                        utils::convert_value_yaml_to_json(v1).unwrap_or(jsonValue::Null)
+                                                    );
+                                                }
+                                                vars
+                                            })
+                                            .unwrap_or_default();
+
+                                        v2.remove(&yaml_value_register);
+
                                         // Check on_success
                                         let yaml_value_on_success = yamlValue::String("on_success".to_string());
                                         if let Some(v) = v2.get(&yaml_value_on_success) {

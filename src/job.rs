@@ -124,6 +124,9 @@ pub struct Task {
     #[serde(default)]
 	pub loop_tempo: Option<u64>,
 
+	#[serde(default)]
+	pub register: Map<String, Value>,
+
     #[serde(default)]
 	pub on_success: String,
     #[serde(default)]
@@ -318,7 +321,8 @@ impl Job {
 
         // Execute task
         while let Some(mut t) = next_task.to_owned() {
-            info!("Task will be executed: name {}, params {:?}", t.name, t.params);
+            info!("Task will be executed: name={}, params={:?}, register={:?}",
+                  t.name, t.params, t.register);
 
             let mut task_result = PluginStatus::Ok;
 
@@ -379,6 +383,11 @@ impl Job {
                     } else {
                         self.result.insert(t.name.clone(), Value::Array(vec_res));
                     }
+
+                    // Render register if not empty
+                    if !t.register.is_empty() {
+                        self.render_register(&t.register)?;
+                    }
                 },
                 None => error!("No plugin found"),
             };
@@ -407,7 +416,8 @@ impl Job {
         for s in tasks.split(',') {
             match self.get_task_by_name(s) {
                 Some(mut t) => {
-                    info!("Task executed: name {}, params {:?}", t.name, t.params);
+                    info!("Task executed: name={}, params={:?}, register={:?}",
+                          t.name, t.params, t.register);
 
                     // If task condition is not satisfied then move to next one
                     let vec_params = self.render_task_template(&mut t)?;
@@ -446,6 +456,11 @@ impl Job {
                                 self.result.insert(t.name.clone(), vec_res[0].clone());
                             } else {
                                 self.result.insert(t.name.clone(), Value::Array(vec_res));
+                            }
+
+                            // Render register if not empty
+                            if !t.register.is_empty() {
+                                self.render_register(&t.register)?;
                             }
                         },
                         None => error!("No plugin with the name {} found", t.name),
@@ -525,7 +540,7 @@ impl Job {
             let mut params = Map::new();
 
             for (n, v) in task.params.clone().into_iter() {
-                params.insert(n.to_string(), render_param_template(component, &n, &v, &data)?);
+                params.insert(n.to_string(), render_value_template(component, &n, &v, &data)?);
             }
 
             vec_params.push(params);
@@ -542,7 +557,7 @@ impl Job {
                 let mut params = Map::new();
 
                 for (n, v) in task.params.clone().into_iter() {
-                    params.insert(n.to_string(), render_param_template(component, &n, &v, &data)?);
+                    params.insert(n.to_string(), render_value_template(component, &n, &v, &data)?);
                 }
 
                 vec_params.push(params);
@@ -578,6 +593,27 @@ impl Job {
         }
 
         Ok(true)
+    }
+
+    fn render_register(&mut self, reg_vars: &Map<String, Value>) -> Result<()> {
+        let mut data: Map<String, Value> = Map::new();
+
+        let mut vars = self.context
+            .get("register")
+            .and_then(|v| v.as_object())
+            .unwrap_or(&Map::new()).to_owned();
+
+        data.insert("result".to_string(), Value::Object(self.result.clone()));
+
+        expand_env_map(&mut data);
+
+        for (k, v) in reg_vars.clone().into_iter() {
+            vars.insert(k.to_string(), render_value_template("register", &k, &v, &data)?);
+        }
+
+        self.context.insert("register".to_string(), Value::Object(vars));
+
+        Ok(())
     }
 
 }
