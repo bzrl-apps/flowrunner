@@ -367,9 +367,23 @@ fn repo_fetch(repo: &Repository, config: &GitRepo) -> Result<()> {
 fn repo_add(repo: &Repository, files: Vec<String>) -> Result<()> {
     let mut index = repo.index()?;
 
-    for f in files.iter() {
-        index.add_path(Path::new(f))?;
-    }
+    let cb = &mut |path: &Path, _matched_spec: &[u8]| -> i32 {
+        let status = repo.status_file(path).unwrap();
+
+        let ret = if status.contains(git2::Status::WT_MODIFIED)
+            || status.contains(git2::Status::WT_NEW)
+        {
+            debug!("Adding file to commit: file={}", path.display());
+            0
+        } else {
+            1
+        };
+
+        ret
+    };
+
+    index.add_all(files.iter(), git2::IndexAddOption::DEFAULT, Some(cb as &mut git2::IndexMatchedPath))?;
+    index.write()?;
 
     Ok(())
 }
@@ -413,7 +427,12 @@ fn repo_push(repo: &Repository, config: &GitRepo) -> Result<()> {
         Err(_) => repo.remote("origin", config.remote_url.as_str())?,
     };
 
-    remote.connect(git2::Direction::Push)?;
+    if config.auth.is_some() {
+        let callbacks = configure_remote_callbacks(config.username.as_str(), &config.auth);
+        remote.connect_auth(git2::Direction::Push, Some(callbacks), None)?;
+    } else {
+        remote.connect(git2::Direction::Push)?;
+    }
 
     let refspec = format!(
         "refs/heads/{}:refs/heads/{}",
@@ -421,8 +440,14 @@ fn repo_push(repo: &Repository, config: &GitRepo) -> Result<()> {
         config.branch
     );
 
-    remote.push(&[refspec.as_str()], None)
-        .map_err(|e| anyhow!(e))
+    // Prepare push options.
+    let callbacks = configure_remote_callbacks(config.username.as_str(), &config.auth);
+    let mut po = git2::PushOptions::new();
+    po.remote_callbacks(callbacks);
+
+    remote.push(&[refspec.as_str()], Some(&mut po))?;
+
+    Ok(())
 }
 
 fn repo_merge(repo: &Repository, config: &GitRepo) -> Result<()> {
