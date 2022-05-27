@@ -372,6 +372,9 @@ fn repo_add(repo: &Repository, files: Vec<String>) -> Result<()> {
 
         let ret = if status.contains(git2::Status::WT_MODIFIED)
             || status.contains(git2::Status::WT_NEW)
+            || status.contains(git2::Status::WT_DELETED)
+            || status.contains(git2::Status::WT_TYPECHANGE)
+            || status.contains(git2::Status::WT_RENAMED)
         {
             debug!("Adding file to commit: file={}", path.display());
             0
@@ -389,11 +392,22 @@ fn repo_add(repo: &Repository, files: Vec<String>) -> Result<()> {
 }
 
 fn repo_remove(repo: &Repository, files: Vec<String>) -> Result<()> {
-    let mut index = repo.index()?;
-
     for f in files.iter() {
-        index.remove_path(Path::new(f))?;
+        let workdir = repo.workdir()
+            .and_then(|p| Some(format!("{}", p.display())))
+            .ok_or(anyhow!("Cannot get repository's workdir"))?;
+
+        let file = format!("{}/{}", workdir, f);
+        let p = Path::new(file.as_str());
+
+        if p.is_dir() {
+            std::fs::remove_dir_all(p)?;
+        } else {
+            std::fs::remove_file(p)?;
+        }
     }
+
+    repo_add(repo, files)?;
 
     Ok(())
 }
