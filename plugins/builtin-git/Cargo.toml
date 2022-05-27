@@ -32,5 +32,8 @@ git2 = "0.13"
 # Openssl
 openssl = { version = "0.10", features = ["vendored"] }
 
+# Eval
+evalexpr = "7"
+
 [lib]
 crate-type = ["dylib"]

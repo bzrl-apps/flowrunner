@@ -22,6 +22,8 @@ use async_trait::async_trait;
 use log::*;
 //use tracing::*;
 
+use evalexpr::*;
+
 use std::path::Path;
 use git2::{
     Repository,
@@ -82,6 +84,8 @@ struct Auth {
 #[derive(Default, Debug ,Serialize, Deserialize, Clone, PartialEq)]
 struct Action {
     name: String,
+    #[serde(default)]
+    cond: Option<String>,
     #[serde(default)]
     files: Vec<String>,
     #[serde(default)]
@@ -271,42 +275,51 @@ impl Plugin for GitRepo {
 
 
         for action in &self.actions {
-            match action.name.as_str() {
-                "fetch" => {
-                    if let Err(e) = repo_fetch(&repo, &self) {
-                        return_plugin_exec_result_err!(result, e.to_string());
+            let cond = action.cond.as_ref()
+                .and_then(|v| eval_boolean(v.as_str()).ok())
+                .unwrap_or(true);
+
+            if cond {
+                match action.name.as_str() {
+                    "fetch" => {
+                        if let Err(e) = repo_fetch(&repo, &self) {
+                            return_plugin_exec_result_err!(result, e.to_string());
+                        }
+                    },
+                    "pull" => {
+                        if let Err(e) = repo_pull(&repo, &self) {
+                            return_plugin_exec_result_err!(result, e.to_string());
+                        }
                     }
-                },
-                "pull" => {
-                    if let Err(e) = repo_pull(&repo, &self) {
-                        return_plugin_exec_result_err!(result, e.to_string());
-                    }
+                    "add" => {
+                        if let Err(e) = repo_add(&repo, action.files.clone()) {
+                            return_plugin_exec_result_err!(result, e.to_string());
+                        }
+                    },
+                    "remove" => {
+                        if let Err(e) = repo_remove(&repo, action.files.clone()) {
+                            return_plugin_exec_result_err!(result, e.to_string());
+                        }
+                    },
+                    "commit" => {
+                        if let Err(e) = repo_commit(
+                                &repo,
+                                &self,
+                                action.commit_msg.as_str()
+                            ) {
+                            return_plugin_exec_result_err!(result, e.to_string());
+                        }
+                    },
+                    "push" => {
+                        if let Err(e) = repo_push(&repo, &self) {
+                            return_plugin_exec_result_err!(result, e.to_string());
+                        }
+                    },
+                    _ => return_plugin_exec_result_err!(result, format!("action name {} is not supported", action.name)),
                 }
-                "add" => {
-                    if let Err(e) = repo_add(&repo, action.files.clone()) {
-                        return_plugin_exec_result_err!(result, e.to_string());
-                    }
-                },
-                "remove" => {
-                    if let Err(e) = repo_remove(&repo, action.files.clone()) {
-                        return_plugin_exec_result_err!(result, e.to_string());
-                    }
-                },
-                "commit" => {
-                    if let Err(e) = repo_commit(
-                            &repo,
-                            &self,
-                            action.commit_msg.as_str()
-                        ) {
-                        return_plugin_exec_result_err!(result, e.to_string());
-                    }
-                },
-                "push" => {
-                    if let Err(e) = repo_push(&repo, &self) {
-                        return_plugin_exec_result_err!(result, e.to_string());
-                    }
-                },
-                _ => return_plugin_exec_result_err!(result, format!("action name {} is not supported", action.name)),
+            } else {
+                warn!("Action is ignored: action={:?}, cond={:?}, eval={}",
+                      action.name, action.cond, cond);
             }
         }
 
