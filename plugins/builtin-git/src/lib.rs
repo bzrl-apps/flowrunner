@@ -379,6 +379,7 @@ fn repo_fetch(repo: &Repository, config: &GitRepo) -> Result<()> {
 
 fn repo_add(repo: &Repository, files: Vec<String>) -> Result<()> {
     let mut index = repo.index()?;
+    let mut count = 0;
 
     let cb = &mut |path: &Path, _matched_spec: &[u8]| -> i32 {
         let status = repo.status_file(path).unwrap();
@@ -390,6 +391,7 @@ fn repo_add(repo: &Repository, files: Vec<String>) -> Result<()> {
             || status.contains(git2::Status::WT_RENAMED)
         {
             debug!("Adding file to commit: file={}", path.display());
+            count += 1;
             0
         } else {
             1
@@ -399,6 +401,11 @@ fn repo_add(repo: &Repository, files: Vec<String>) -> Result<()> {
     };
 
     index.add_all(files.iter(), git2::IndexAddOption::DEFAULT, Some(cb as &mut git2::IndexMatchedPath))?;
+
+    if count == 0 {
+        return Err(anyhow!("No file found to add for committing"));
+    }
+
     index.write()?;
 
     Ok(())
