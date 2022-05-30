@@ -369,14 +369,7 @@ impl Job {
                         info!("Task result: name {}, res: {:?}",  t.name.clone(), res);
 
                         if res.status == PluginStatus::Ko {
-                            // Go the task of Success if specified
-                            next_task = match t.on_failure.len() {
-                                n if n == 0 => None,
-                                _ => self.get_task_by_name(t.on_failure.as_str()),
-                            };
-
                             task_result = PluginStatus::Ko;
-                            break;
                         }
 
                         // Check if loop_tempo is set
@@ -407,6 +400,11 @@ impl Job {
                     _ => None,
                 };
             } else {
+                // Go the task of Failure if specified
+                next_task = match t.on_failure.len() {
+                    n if n == 0 => None,
+                    _ => self.get_task_by_name(t.on_failure.as_str()),
+                };
                 // Update job's status to Ko when a task failed
                 self.status = Status::Ko;
             }
