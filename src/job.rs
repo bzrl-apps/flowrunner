@@ -211,7 +211,7 @@ impl Job {
                         if let Some(cache) = self.cache.clone() {
                             let uuid_cloned = uuid.clone();
                             let name_cloned = self.name.clone();
-                            let status_cloned = self.status.clone();
+                            let status_cloned = self.status;
                             let result_cloned = self.result.clone();
                             let mut job_result = cache.get_with(uuid_cloned, async move {
                                 let mut jr = Map::new();
@@ -382,7 +382,11 @@ impl Job {
                     if vec_params.len() == 1 {
                         self.result.insert(t.name.clone(), vec_res[0].clone());
                     } else {
-                        self.result.insert(t.name.clone(), Value::Array(vec_res));
+                        self.result.insert(t.name.clone(), json!({
+                            "status": task_result,
+                            "error": "",
+                            "output": Value::Array(vec_res)
+                        }));
                     }
 
                     // Render register if not empty
@@ -461,7 +465,11 @@ impl Job {
                             if vec_params.len() == 1 {
                                 self.result.insert(t.name.clone(), vec_res[0].clone());
                             } else {
-                                self.result.insert(t.name.clone(), Value::Array(vec_res));
+                                self.result.insert(t.name.clone(), json!({
+                                    "status": self.status,
+                                    "error": "",
+                                    "output": Value::Array(vec_res)
+                                }));
                             }
 
                             // Render register if not empty
