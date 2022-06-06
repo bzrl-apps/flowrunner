@@ -379,6 +379,7 @@ dependencies = [
  "async-channel",
  "async-trait",
  "env_logger 0.8.4",
+ "evalexpr",
  "flowrunner",
  "json_ops",
  "log",

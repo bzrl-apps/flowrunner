@@ -1,35 +1,39 @@
 extern crate flowrunner;
-use flowrunner::plugin::{Plugin, PluginExecResult, Status};
-use flowrunner::message::Message as FlowMessage;
-use flowrunner::return_plugin_exec_result_err;
 use flowrunner::datastore::store::BoxStore;
+use flowrunner::message::Message as FlowMessage;
+use flowrunner::plugin::{Plugin, PluginExecResult, Status};
+use flowrunner::return_plugin_exec_result_err;
 
 extern crate json_ops;
 use json_ops::JsonOps;
 
 //use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use serde_json::value::Value;
 use serde_json::Map;
 
 use anyhow::{anyhow, Result};
 
 //use tokio::sync::*;
-use async_channel::{Sender, Receiver};
+use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 
 use log::debug;
 
+use evalexpr::*;
+
 // Our plugin implementation
-#[derive(Default, Debug ,Serialize, Deserialize, Clone)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
 struct JsonPatch {
     target: String,
     patch: Vec<Op>,
 }
 
-#[derive(Default, Debug ,Serialize, Deserialize, Clone)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
 struct Op {
     path: String,
+    #[serde(default)]
+    cond: Option<String>,
     action: String,
     value: Option<Value>,
 }
@@ -62,7 +66,7 @@ impl Plugin for JsonPatch {
             Ok(v) => self.target = v,
             Err(e) => {
                 return Err(anyhow!(e));
-            },
+            }
         };
 
         // Check Patch
@@ -83,26 +87,33 @@ impl Plugin for JsonPatch {
                     let ops = vec!["add", "replace", "remove"];
 
                     if !ops.contains(&o.action.as_str()) {
-                        return Err(anyhow!("Op must have one of the following values: add, replace & remove"));
+                        return Err(anyhow!(
+                            "Op must have one of the following values: add, replace & remove"
+                        ));
                     }
 
                     // Path can be only empty when action is add for array
-                    if o.path.is_empty() &&
-                        (o.action.as_str() == "replace" || o.action.as_str() == "remove") {
-                        return Err(anyhow!("Path must be specified for actions: replace & remove"));
+                    if o.path.is_empty()
+                        && (o.action.as_str() == "replace" || o.action.as_str() == "remove")
+                    {
+                        return Err(anyhow!(
+                            "Path must be specified for actions: replace & remove"
+                        ));
                     }
 
                     // Check if value is None when action is add or replace
-                    if (o.action.as_str() == "add" || o.action.as_str() == "replace") && o.value.is_none() {
+                    if (o.action.as_str() == "add" || o.action.as_str() == "replace")
+                        && o.value.is_none()
+                    {
                         return Err(anyhow!("Value must be specified when Op is add or replace"));
                     }
                 }
 
                 self.patch = v;
-            },
+            }
             Err(e) => {
                 return Err(anyhow!(e));
-            },
+            }
         };
 
         Ok(())
@@ -112,8 +123,13 @@ impl Plugin for JsonPatch {
 
     /// Apply operation per operation on target in the order. The result of previous operation will
     /// be used for the next operation.
-    async fn func(&self, _sender: Option<String>, _rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
-        let _ =  env_logger::try_init();
+    async fn func(
+        &self,
+        _sender: Option<String>,
+        _rx: &Vec<Sender<FlowMessage>>,
+        _tx: &Vec<Receiver<FlowMessage>>,
+    ) -> PluginExecResult {
+        let _ = env_logger::try_init();
 
         let mut result = PluginExecResult::default();
 
@@ -125,39 +141,74 @@ impl Plugin for JsonPatch {
         let mut json_ops = JsonOps::new(v_target);
 
         for (idx, op) in self.patch.iter().enumerate() {
-            // Convert string correctly to value
-            let val: Option<Value> = op.value.as_ref()
-                .and_then(|v| v.as_str())
-                .and_then(|v| serde_json::from_str(v).ok());
+            let cond = op
+                .cond
+                .as_ref()
+                .and_then(|v| eval_boolean(v.as_str()).ok())
+                .unwrap_or(true);
 
-            if op.action == "replace" {
-                if let Some(v) = val.clone() {
-                    if let Err(e) = json_ops.set_value_by_path(op.path.as_str(), v) {
-                        return_plugin_exec_result_err!(result, format!("op[{}], path {}: {}", idx, op.path, e));
+            if cond {
+                // Convert string correctly to value
+                let val: Option<Value> =
+                    op.value.as_ref().and_then(|v| v.as_str()).map(
+                        |v| match serde_json::from_str(v) {
+                            Ok(v) => v,
+                            Err(_) => Value::String(v.to_string()),
+                        },
+                    );
+
+                if op.action == "replace" {
+                    if let Some(v) = val.clone() {
+                        if let Err(e) = json_ops.set_value_by_path(op.path.as_str(), v) {
+                            return_plugin_exec_result_err!(
+                                result,
+                                format!("op[{}], path {}: {}", idx, op.path, e)
+                            );
+                        }
+                    } else {
+                        return_plugin_exec_result_err!(
+                            result,
+                            format!(
+                                "op[{}], path {}: for replace action, value must be specified",
+                                idx, op.path
+                            )
+                        );
                     }
-                } else {
-                    return_plugin_exec_result_err!(result, format!("op[{}], path {}: for replace action, value must be specified", idx, op.path));
                 }
-            }
 
-            if op.action == "add" {
-                if let Some(v) = val.clone() {
-                    if let Err(e) = json_ops.add_value_by_path(op.path.as_str(), v) {
-                        return_plugin_exec_result_err!(result, format!("op[{}], path {}: {}", idx, op.path, e));
+                if op.action == "add" {
+                    if let Some(v) = val.clone() {
+                        if let Err(e) = json_ops.add_value_by_path(op.path.as_str(), v) {
+                            return_plugin_exec_result_err!(
+                                result,
+                                format!("op[{}], path {}: {}", idx, op.path, e)
+                            );
+                        }
+                    } else {
+                        return_plugin_exec_result_err!(
+                            result,
+                            format!(
+                                "op[{}], path {}: for add action, value must be specified",
+                                idx, op.path
+                            )
+                        );
                     }
-                } else {
-                    return_plugin_exec_result_err!(result, format!("op[{}], path {}: for add action, value must be specified", idx, op.path));
                 }
-            }
 
-            if op.action == "remove" {
-                if let Err(e) = json_ops.remove_value_by_path(op.path.as_str()) {
-                    return_plugin_exec_result_err!(result, format!("op[{}], path {}: {}", idx, op.path, e));
+                if op.action == "remove" {
+                    if let Err(e) = json_ops.remove_value_by_path(op.path.as_str()) {
+                        return_plugin_exec_result_err!(
+                            result,
+                            format!("op[{}], path {}: {}", idx, op.path, e)
+                        );
+                    }
                 }
             }
         }
 
-        result.output.insert("result".to_string(), json_ops.get_json_value(""));
+        result
+            .output
+            .insert("result".to_string(), json_ops.get_json_value(""));
         result.status = Status::Ok;
         result
     }
@@ -184,7 +235,8 @@ mod tests {
 
         let mut jsonpatch = JsonPatch::default();
 
-        let params: Map<String, Value> = serde_json::from_str(r#"{
+        let params: Map<String, Value> = serde_json::from_str(
+            r#"{
             "target": {
                 "string": "text",
                 "boolean": true,
@@ -268,7 +320,9 @@ mod tests {
                     }
                 }
             ]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
         jsonpatch.validate_params(params).unwrap();
 
