@@ -1,7 +1,7 @@
 use log::*;
+use serde::de::DeserializeOwned;
 #[allow(unused_imports)]
 use serde::{Deserialize, Serialize};
-use serde::de::DeserializeOwned;
 //use std::collections::HashMap;
 use serde_json::Value;
 
@@ -71,10 +71,11 @@ impl JsonOps {
                     // So if val is an array, val[n] is an element of array
                     if val_type.as_str() == "array" {
                         val[n].clone()
-                    } else { // Otherwise, it is a just an element of a object so string
+                    } else {
+                        // Otherwise, it is a just an element of a object so string
                         val[k].clone()
                     }
-                },
+                }
                 Err(_) => val[k].clone(),
             };
 
@@ -104,9 +105,12 @@ impl JsonOps {
         if self_value_type == "object" || self_value_type == "array" {
             if path.is_empty() {
                 if self_value_type == value_type {
-                    self.value = value.clone();
+                    self.value = value;
+                    return Ok(());
                 } else {
-                    return Err(anyhow!("The new value's type is not the same as the old one"));
+                    return Err(anyhow!(
+                        "The new value's type is not the same as the old one"
+                    ));
                 }
             }
         } else {
@@ -124,56 +128,72 @@ impl JsonOps {
                 // So if val is an array, val[n] is an element of array
                 if get_value_type(&val).as_str() == "array" {
                     (val[n].clone(), n as i32)
-                } else { // Otherwise, it is a just an element of a object so string
+                } else {
+                    // Otherwise, it is a just an element of a object so string
                     (val[k].clone(), -1)
                 }
-            },
-            Err(_) => (val[k].clone(), -1)
+            }
+            Err(_) => (val[k].clone(), -1),
         };
 
         let new_val_type = get_value_type(&next_val);
         if new_val_type == "null" {
-            return Err(anyhow!("{}", format!("Value corresponding to the index {} can not be null", k)));
+            return Err(anyhow!(
+                "{}",
+                format!("Value corresponding to the index {} can not be null", k)
+            ));
         }
 
         // If next_val is simple type: number, string or bool. In this case, we replace immediately
         // the new value if the type matches
-        if new_val_type == "number" ||
-            new_val_type == "bool" ||
-            new_val_type == "string" {
-                let mut v = value.clone();
+        if new_val_type == "number" || new_val_type == "bool" || new_val_type == "string" {
+            let mut v = value;
 
-                // We check if value to replace is a string. If yes, we extract and deserialize
-                // again to get the right Value's type. Why ? Because in some case with template
-                // rendering, value automatically gets string instead of its real value type.
-                if value_type == "string" {
-                    let s = v.as_str().ok_or(anyhow!("Cannot extract string from the value"))?;
-                    v = serde_json::from_str(s)?;
+            // We check if value to replace is a string. If yes, we extract and deserialize
+            // again to get the right Value's type. Why ? Because in some case with template
+            // rendering, value automatically gets string instead of its real value type.
+            if value_type == "string" {
+                let s = v
+                    .as_str()
+                    .ok_or_else(|| anyhow!("Cannot extract string from the value"))?;
+                v = match serde_json::from_str(s) {
+                    Ok(v) => v,
+                    Err(_) => Value::String(s.to_string()),
+                };
 
-                    value_type = get_value_type(&v);
-                }
-
-                debug!("set_value_by_path: compare old & new value type: {} (old), {} (new)", new_val_type, value_type);
-
-                if new_val_type == value_type {
-                    if idx > -1 {
-                        self.value[idx as usize] = v;
-                    } else {
-                        self.value[k] = v;
-                    }
-
-                    return Ok(());
-                } else {
-                    return Err(anyhow!("The new value's type is not the same as the old one"));
-                }
+                value_type = get_value_type(&v);
             }
+
+            debug!(
+                "set_value_by_path: compare old & new value type: {} (old), {} (new)",
+                new_val_type, value_type
+            );
+
+            if new_val_type == value_type {
+                if idx > -1 {
+                    self.value[idx as usize] = v;
+                } else {
+                    self.value[k] = v;
+                }
+
+                return Ok(());
+            } else {
+                return Err(anyhow!(
+                    "The new value's type is not the same as the old one"
+                ));
+            }
+        }
 
         // Otherwise, do recursive
         let mut jo = JsonOps::new(next_val);
         slice_path.remove(0);
         jo.set_value_by_path(slice_path.join(".").as_str(), value)?;
 
-        self.value[k] = jo.value;
+        if idx > -1 {
+            self.value[idx as usize] = jo.value;
+        } else {
+            self.value[k] = jo.value;
+        }
 
         Ok(())
     }
@@ -186,7 +206,10 @@ impl JsonOps {
     pub fn add_value_by_path(&mut self, path: &str, value: Value) -> Result<()> {
         let self_value_type = get_value_type(&self.value);
 
-        debug!("add_value_by_path: path: {}, value: {:?}, self: {:?}, self_value_type: {:?}", path, value, self, self_value_type);
+        debug!(
+            "add_value_by_path: path: {}, value: {:?}, self: {:?}, self_value_type: {:?}",
+            path, value, self, self_value_type
+        );
 
         // Check type
         if self_value_type != "object" && self_value_type != "array" {
@@ -215,17 +238,18 @@ impl JsonOps {
                 // So if val is an array, val[n] is an element of array
                 if get_value_type(&val).as_str() == "array" {
                     val[n].clone()
-                } else { // Otherwise, it is a just an element of a object so string
+                } else {
+                    // Otherwise, it is a just an element of a object so string
                     val[k].clone()
                 }
-            },
-            Err(_) => val[k].clone()
+            }
+            Err(_) => val[k].clone(),
         };
 
         let new_val_type = get_value_type(&next_val);
 
         if new_val_type.as_str() == "null" {
-                //return Err(anyhow!("{}", format!("Value corresponding to the index {} can not be null", k)));
+            //return Err(anyhow!("{}", format!("Value corresponding to the index {} can not be null", k)));
             if self_value_type == "object" {
                 if let Some(o) = self.value.as_object_mut() {
                     if o.insert(k.to_string(), value).is_some() {
@@ -239,10 +263,14 @@ impl JsonOps {
             }
         }
 
-        if new_val_type == "number" ||
-            new_val_type == "bool" ||
-            new_val_type == "string" {
-                return Err(anyhow!("{}", format!("Cannot add new value to a simple value's type: {}", new_val_type)));
+        if new_val_type == "number" || new_val_type == "bool" || new_val_type == "string" {
+            return Err(anyhow!(
+                "{}",
+                format!(
+                    "Cannot add new value to a simple value's type: {}",
+                    new_val_type
+                )
+            ));
         }
 
         // Add value if we reach the last element of the path
@@ -280,11 +308,13 @@ impl JsonOps {
         Ok(())
     }
 
-
     pub fn remove_value_by_path(&mut self, path: &str) -> Result<()> {
         let self_value_type = get_value_type(&self.value);
 
-        debug!("remove_value_by_path: path: {}, self: {:?}, self_value_type: {:?}", path, self, self_value_type);
+        debug!(
+            "remove_value_by_path: path: {}, self: {:?}, self_value_type: {:?}",
+            path, self, self_value_type
+        );
 
         // Check type
         if self_value_type != "object" && self_value_type != "array" {
@@ -307,16 +337,20 @@ impl JsonOps {
                 // So if val is an array, val[n] is an element of array
                 if get_value_type(&val).as_str() == "array" {
                     (val[n].clone(), n as i32)
-                } else { // Otherwise, it is a just an element of a object so string
+                } else {
+                    // Otherwise, it is a just an element of a object so string
                     (val[k].clone(), -1)
                 }
-            },
-            Err(_) => (val[k].clone(), -1)
+            }
+            Err(_) => (val[k].clone(), -1),
         };
 
         let new_val_type = get_value_type(&next_val);
         if new_val_type == "null" {
-            return Err(anyhow!("{}", format!("Cannot remove a null value from index: {}", k)));
+            return Err(anyhow!(
+                "{}",
+                format!("Cannot remove a null value from index: {}", k)
+            ));
         }
 
         let val_type = get_value_type(&val);
@@ -376,7 +410,7 @@ mod tests {
     #[derive(Default, Debug, PartialEq, Serialize, Deserialize)]
     struct Topic {
         name: String,
-        event: String
+        event: String,
     }
 
     #[test]
@@ -394,12 +428,19 @@ mod tests {
         assert_eq!("earliest".to_string(), offset);
         assert_eq!(Vec::<String>::new(), brokers_fake);
         assert_eq!(vec!["127.0.0.1:9092"], brokers);
-        assert_eq!(Topic{name: "topic2".to_string(), event: "event2".to_string()}, topics);
+        assert_eq!(
+            Topic {
+                name: "topic2".to_string(),
+                event: "event2".to_string()
+            },
+            topics
+        );
     }
 
     #[test]
     fn test_set_value_by_path() {
-        let value: Value = serde_json::from_str(r#"{
+        let value: Value = serde_json::from_str(
+            r#"{
                 "string": "text",
                 "boolean": true,
                 "int": 5,
@@ -416,7 +457,9 @@ mod tests {
                         "field41": "text1"
                     }
                 }
-            }"#).unwrap();
+            }"#,
+        )
+        .unwrap();
 
         let mut jop = JsonOps::new(value);
 
@@ -430,9 +473,11 @@ mod tests {
         jop.set_value_by_path("arr_mixted.1", json!(false)).unwrap();
         jop.set_value_by_path("arr_mixted.3", json!(20.55)).unwrap();
         jop.set_value_by_path("object.field3.2", json!(1)).unwrap();
-        jop.set_value_by_path("object.field4.field41", json!("str1")).unwrap();
+        jop.set_value_by_path("object.field4.field41", json!("str1"))
+            .unwrap();
 
-        let expected: Value = serde_json::from_str(r#"{
+        let expected: Value = serde_json::from_str(
+            r#"{
                 "string": "text2",
                 "boolean": false,
                 "int": 10,
@@ -449,26 +494,35 @@ mod tests {
                         "field41": "str1"
                     }
                 }
-            }"#).unwrap();
+            }"#,
+        )
+        .unwrap();
 
         assert_eq!(expected, jop.value);
 
         let mut result = jop.set_value_by_path("", json!(1));
-        assert_eq!("The new value's type is not the same as the old one",
-                    result.err().unwrap().to_string());
+        assert_eq!(
+            "The new value's type is not the same as the old one",
+            result.err().unwrap().to_string()
+        );
 
         result = jop.set_value_by_path("arr_mixted.2", json!(1));
-        assert_eq!("The new value's type is not the same as the old one",
-                    result.err().unwrap().to_string());
+        assert_eq!(
+            "The new value's type is not the same as the old one",
+            result.err().unwrap().to_string()
+        );
 
         result = jop.set_value_by_path("arr_mixted.5", json!(1));
-        assert_eq!("Value corresponding to the index 5 can not be null",
-                    result.err().unwrap().to_string());
+        assert_eq!(
+            "Value corresponding to the index 5 can not be null",
+            result.err().unwrap().to_string()
+        );
     }
 
     #[test]
     fn test_add_value_by_path() {
-        let value: Value = serde_json::from_str(r#"{
+        let value: Value = serde_json::from_str(
+            r#"{
                 "string": "text",
                 "boolean": true,
                 "int": 5,
@@ -485,7 +539,9 @@ mod tests {
                         "field41": "text1"
                     }
                 }
-            }"#).unwrap();
+            }"#,
+        )
+        .unwrap();
 
         let mut jop = JsonOps::new(value);
 
@@ -494,11 +550,15 @@ mod tests {
         jop.add_value_by_path("arr_bool", json!(false)).unwrap();
         jop.add_value_by_path("arr_mixted", json!(false)).unwrap();
         jop.add_value_by_path("object.field5", json!(true)).unwrap();
-        jop.add_value_by_path("object.field3", json!(15.55)).unwrap();
-        jop.add_value_by_path("object.field4.field42", json!("str1")).unwrap();
-        jop.add_value_by_path("object2", json!({"field1": "text1"})).unwrap();
+        jop.add_value_by_path("object.field3", json!(15.55))
+            .unwrap();
+        jop.add_value_by_path("object.field4.field42", json!("str1"))
+            .unwrap();
+        jop.add_value_by_path("object2", json!({"field1": "text1"}))
+            .unwrap();
 
-        let expected: Value = serde_json::from_str(r#"{
+        let expected: Value = serde_json::from_str(
+            r#"{
                 "string": "text",
                 "boolean": true,
                 "int": 5,
@@ -520,18 +580,23 @@ mod tests {
                 "object2": {
                     "field1": "text1"
                 }
-            }"#).unwrap();
+            }"#,
+        )
+        .unwrap();
 
         assert_eq!(expected, jop.value);
 
         let result = jop.add_value_by_path("string", json!("str"));
-        assert_eq!("Cannot add new value to a simple value's type: string",
-                    result.err().unwrap().to_string());
+        assert_eq!(
+            "Cannot add new value to a simple value's type: string",
+            result.err().unwrap().to_string()
+        );
     }
 
     #[test]
     fn test_remove_value_by_path() {
-        let value: Value = serde_json::from_str(r#"{
+        let value: Value = serde_json::from_str(
+            r#"{
                 "string": "text",
                 "boolean": true,
                 "int": 5,
@@ -548,7 +613,9 @@ mod tests {
                         "field41": "text1"
                     }
                 }
-            }"#).unwrap();
+            }"#,
+        )
+        .unwrap();
 
         let mut jop = JsonOps::new(value);
 
@@ -561,7 +628,8 @@ mod tests {
         jop.remove_value_by_path("object.field3.0").unwrap();
         jop.remove_value_by_path("object.field4.field41").unwrap();
 
-        let expected: Value = serde_json::from_str(r#"{
+        let expected: Value = serde_json::from_str(
+            r#"{
                 "boolean": true,
                 "float": 12.5,
                 "arr_int": [1, 2, 3],
@@ -572,12 +640,16 @@ mod tests {
                     "field3": [2, 3],
                     "field4": {}
                 }
-            }"#).unwrap();
+            }"#,
+        )
+        .unwrap();
 
         assert_eq!(expected, jop.value);
 
         let result = jop.remove_value_by_path("string");
-        assert_eq!("Cannot remove a null value from index: string",
-                    result.err().unwrap().to_string());
+        assert_eq!(
+            "Cannot remove a null value from index: string",
+            result.err().unwrap().to_string()
+        );
     }
 }
