@@ -617,12 +617,36 @@ impl Job {
             .and_then(|v| v.as_object())
             .unwrap_or(&Map::new()).to_owned();
 
+        let msg_id = self.context
+            .get("msg_id")
+            .and_then(|v| v.as_object())
+            .unwrap_or(&Map::new()).to_owned();
+
+        let user_payload = self.context
+            .get("user_payload")
+            .and_then(|v| v.as_object())
+            .unwrap_or(&Map::new()).to_owned();
+
         data.insert("result".to_string(), Value::Object(self.result.clone()));
+        data.insert("msg_id".to_string(), Value::Object(msg_id));
+        data.insert("user_payload".to_string(), Value::Object(user_payload));
 
         expand_env_map(&mut data);
 
         for (k, v) in reg_vars.clone().into_iter() {
-            vars.insert(k.to_string(), render_value_template("register", &k, &v, &data)?);
+            let val = render_value_template("register", &k, &v, &data)
+                .and_then(|v| {
+                    match v.as_str() {
+                        Some(v) => match serde_json::from_str(v) {
+                            Ok(v1) => Ok(v1),
+                            Err(_) => Ok(Value::String(v.to_string()))
+                        },
+                        None => Ok(v),
+                    }
+                })?;
+
+
+            vars.insert(k.to_string(), val);
         }
 
         self.context.insert("register".to_string(), Value::Object(vars));
