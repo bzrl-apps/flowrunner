@@ -1,3 +1,42 @@
+## [1.0.0](https://github.com/bzrl-apps/flowrunner/compare/v0.11.0...v1.0.0) (2022-06-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **job:** Task result structure got changed when using with loop.
+Loop task now has status, error & output fields as a normal task. So
+array of item results is moved to output.
+* **core:** flows accessing to exchanged message content such as data,
+source, uuid etc. need to be changed. For ex: replace
+`context.msg_id.data.event` instead of `context.data.event` when using
+kafka source.
+
+### 🚀 Features
+
+* **builtin-git:** add condition for each action ([a31c213](https://github.com/bzrl-apps/flowrunner/commit/a31c21387306e7ae301e4d0b4de086db822c65de)), closes [#64](https://github.com/bzrl-apps/flowrunner/issues/64)
+* **builtin-json-patch:** add condition to operation ([37e614a](https://github.com/bzrl-apps/flowrunner/commit/37e614afdb061de10cb579f622bcdcce94259f65)), closes [#65](https://github.com/bzrl-apps/flowrunner/issues/65)
+* **builtin-lineinfile:** init plugin lineinfile ([0dadf0b](https://github.com/bzrl-apps/flowrunner/commit/0dadf0bfb7845f58995ad2699fae00b53c1cf916)), closes [#60](https://github.com/bzrl-apps/flowrunner/issues/60)
+* **core:** add loop_tempo to temporise 2 executions in loop ([f1a3402](https://github.com/bzrl-apps/flowrunner/commit/f1a3402bd318167a7f6594741950404a6877dafb)), closes [#57](https://github.com/bzrl-apps/flowrunner/issues/57)
+* **task:** allow register to access to context ([3e13c8f](https://github.com/bzrl-apps/flowrunner/commit/3e13c8f406b42ce28d5ed370485a0e7211a138a8)), closes [#67](https://github.com/bzrl-apps/flowrunner/issues/67)
+* **task:** register global variables after task execution ([49c2b97](https://github.com/bzrl-apps/flowrunner/commit/49c2b972e46699b714e7b964023f0059dc5ad652)), closes [#62](https://github.com/bzrl-apps/flowrunner/issues/62)
+
+
+### 🐛 Bug Fixes
+
+* **builtin-git:** clone & authentication ([1b64e66](https://github.com/bzrl-apps/flowrunner/commit/1b64e663b27ae7a59409b3f2f8f1047bfde655b1))
+* **builtin-git:** correctly convert value field from string to Value ([bc78081](https://github.com/bzrl-apps/flowrunner/commit/bc78081d555771e129f5336360dec0f10a268d7c))
+* **builtin-git:** creation of local_dir when clonning ([fc3805c](https://github.com/bzrl-apps/flowrunner/commit/fc3805c054cb63b93c786cab2c7458baa0010799))
+* **builtin-git:** detect changes and use add for git remove ([9418c97](https://github.com/bzrl-apps/flowrunner/commit/9418c97d98ef23612513cdf8f364cba8ad06a745))
+* **builtin-git:** return error when no change found to add to commit ([9180bcb](https://github.com/bzrl-apps/flowrunner/commit/9180bcbb52316576b7124e73c1230e02d02f07d2))
+* **builtin-git:** review params verifications ([f6acb02](https://github.com/bzrl-apps/flowrunner/commit/f6acb0237ef5fe256aa4225a4e7e86029eeddb81))
+* **builtin-git:** several bugs found in add & push ([ad100ed](https://github.com/bzrl-apps/flowrunner/commit/ad100ed73279140c12d1030a7d276f8995e8937e))
+* **core:** move exchanged message content to context.msg_id ([8f5d76a](https://github.com/bzrl-apps/flowrunner/commit/8f5d76a7cc2a7d99c4c8116cbfc17a184a6631ca)), closes [#63](https://github.com/bzrl-apps/flowrunner/issues/63)
+* **job:** add status & error to task with loop ([c8656ac](https://github.com/bzrl-apps/flowrunner/commit/c8656acb077f1fbb4d3ebf4837c430eb73ee3538))
+* **job:** do not stop at 1st error when looping ([8158e3d](https://github.com/bzrl-apps/flowrunner/commit/8158e3d71f1f6c998487421da36711f2b3113d38))
+* **json-ops:** replacement of an array element ([49b7da4](https://github.com/bzrl-apps/flowrunner/commit/49b7da40467660f3f5bbe72e7e22155e14dd485f)), closes [#66](https://github.com/bzrl-apps/flowrunner/issues/66)
+* remove username in the auth config ([23f4eea](https://github.com/bzrl-apps/flowrunner/commit/23f4eea8d6bde54251f56e72b07060f28fac8204))
+* upgrade crates for security (dependabot alerts) ([7edde2d](https://github.com/bzrl-apps/flowrunner/commit/7edde2d1a2a209a152e5700883d230bf15859126))
+
 ## [0.11.0](https://github.com/bzrl-apps/flowrunner/compare/v0.10.0...v0.11.0) (2022-05-11)
 
 
