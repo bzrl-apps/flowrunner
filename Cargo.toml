@@ -1,6 +1,6 @@
 [package]
 name = "flowrunner"
-version = "0.10.0"
+version = "0.11.0"
 authors = ["Thanh NGUYEN <thanh@uthng.me>"]
 edition = "2018"
 
@@ -37,7 +37,12 @@ members = [
   "plugins/builtin-json-patch",
   "plugins/builtin-datastore",
   "plugins/builtin-webhook",
-  "plugins/builtin-pgql-tokio"
+  "plugins/builtin-pgql-tokio",
+  "plugins/builtin-httpserver",
+  "plugins/builtin-dnsquery",
+  "plugins/builtin-git",
+  "plugins/builtin-template-tera",
+  "plugins/builtin-lineinfile"
 ]
 
 #[lib]
@@ -53,7 +58,7 @@ bindgen = "0.59"
 clap = "2.33.3"
 
 # async/await
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1.19", features = ["full"] }
 async-trait = "0.1"
 async-channel = "1"
 futures = "0.3"
@@ -109,6 +114,10 @@ evalexpr = "7"
 rocksdb = { version = "0.18", default-features = false, features = ["serde", "zstd", "zlib", "snappy"] }
 openssl = { version = "0.10", features = ["vendored"] }
 
+# Moka cache
+moka = { version = "0.8", features = ["future"] }
+futures-util = "0.3"
+
 # sys-info
 sys-info = "0.9"
 
@@ -117,5 +126,14 @@ axum = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version="0.3", features = ["env-filter"] }
 
+# Request
+reqwest = "0.11"
+
 # UUID
 uuid = { version = "0.8", features = ["default", "v4"] }
+
+# Trust DNS
+trust-dns-client = "*"
+
+# Cronjob
+tokio-cron-scheduler = "0.7"

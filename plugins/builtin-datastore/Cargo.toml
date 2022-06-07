@@ -11,7 +11,7 @@ flowrunner = { path = "../../" }
 json_ops = { path = "../../json-ops" }
 
 # Async/await
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1.19", features = ["full"] }
 async-trait = "0.1"
 async-channel = "1"
 
@@ -30,7 +30,7 @@ serde_json = "1.0"
 evalexpr = "7"
 
 # Regex
-regex = "1"
+regex = "1.5.6"
 
 [lib]
 crate-type = ["dylib"]

@@ -1,8 +1,8 @@
 #[macro_use]
 extern crate flowrunner;
-use flowrunner::plugin::{Plugin, PluginExecResult, Status};
-use flowrunner::message::Message as FlowMessage;
 use flowrunner::datastore::store::BoxStore;
+use flowrunner::message::Message as FlowMessage;
+use flowrunner::plugin::{Plugin, PluginExecResult, Status};
 
 extern crate json_ops;
 use json_ops::JsonOps;
@@ -15,19 +15,19 @@ use serde_json::{Map, Number};
 use anyhow::{anyhow, Result};
 
 //use tokio::sync::*;
-use async_channel::{Sender, Receiver};
-use tokio::runtime::Runtime;
+use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
+use tokio::runtime::Runtime;
 
 use futures::{pin_mut, TryStreamExt};
 
-use tokio_postgres::{NoTls, Statement, Error, Row};
 use tokio_postgres::types::ToSql;
+use tokio_postgres::{Error, NoTls, Row, Statement};
 
 use openssl::ssl::{SslConnector, SslFiletype, SslMethod};
 use postgres_openssl::MakeTlsConnector;
 
-use chrono::{DateTime, Utc, NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 
 #[allow(unused_imports)]
 use std::str::FromStr;
@@ -43,7 +43,7 @@ struct TokioPgql {
     conn_str: String,
     stmts: Vec<Stmt>,
     pp_stmt_enabled: bool,
-    tls: Option<TlsConfig>
+    tls: Option<TlsConfig>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
@@ -51,8 +51,7 @@ struct TlsConfig {
     verify: bool,
     client_key: Option<String>,
     client_cert: Option<String>,
-    ca_cert: Option<String>
-
+    ca_cert: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
@@ -60,7 +59,7 @@ struct Stmt {
     stmt: String,
     cond: Option<String>,
     params: Vec<StmtParam>,
-    fetch: Option<String>
+    fetch: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
@@ -89,77 +88,83 @@ fn from_row(row: &Row) -> Result<PgqlRow, Error> {
                 let val: bool = row.try_get(i)?;
 
                 columns.insert(name.to_string(), Value::Bool(val));
-            },
+            }
             "char" => {
                 let val: i8 = row.try_get(i)?;
 
                 columns.insert(name.to_string(), Value::Number(Number::from(val)));
-            },
+            }
             "int" | "serial" | "int4" => {
                 let val: i32 = row.try_get(i)?;
 
                 columns.insert(name.to_string(), Value::Number(Number::from(val)));
-            },
+            }
             "smallint" | "smallserial" | "int2" => {
                 let val: i16 = row.try_get(i)?;
 
                 columns.insert(name.to_string(), Value::Number(Number::from(val)));
-            },
+            }
             "bigint" | "bigserial" | "int8" => {
                 let val: i64 = row.try_get(i)?;
 
                 columns.insert(name.to_string(), Value::Number(Number::from(val)));
-            },
+            }
             "double precision" | "float8" | "real" | "float4" => {
                 let val: f64 = row.try_get(i)?;
 
-                columns.insert(name.to_string(), Value::Number(Number::from_f64(val).unwrap_or_else(|| Number::from(0))));
-            },
+                columns.insert(
+                    name.to_string(),
+                    Value::Number(Number::from_f64(val).unwrap_or_else(|| Number::from(0))),
+                );
+            }
             "varchar" | "char(n)" | "text" | "name" => {
                 let val: String = row.try_get(i)?;
 
                 columns.insert(name.to_string(), Value::String(val));
-            },
+            }
             "timestamptz" => {
                 let val: DateTime<Utc> = row.try_get(i)?;
 
                 columns.insert(name.to_string(), Value::String(val.to_string()));
-            },
+            }
             "timestamp" => {
                 let val: NaiveDateTime = row.try_get(i)?;
 
                 columns.insert(name.to_string(), Value::String(val.to_string()));
-            },
+            }
             "date" => {
                 let val: NaiveDate = row.try_get(i)?;
 
                 columns.insert(name.to_string(), Value::String(val.to_string()));
-            },
+            }
             "time" => {
                 let val: NaiveTime = row.try_get(i)?;
 
                 columns.insert(name.to_string(), Value::String(val.to_string()));
-            },
+            }
             "uuid" => {
                 let val: uuid::Uuid = row.try_get(i)?;
 
                 columns.insert(name.to_string(), Value::String(val.to_string()));
-            },
+            }
             //"inet" | "cidr" => {
-                //let val: ipnetwork::IpNetwork = row.try_get(i)?;
+            //let val: ipnetwork::IpNetwork = row.try_get(i)?;
 
-                //columns.insert(name.to_string(), Value::String(val.to_string()));
+            //columns.insert(name.to_string(), Value::String(val.to_string()));
             //},
             "macaddr" => {
                 let val: eui48::MacAddress = row.try_get(i)?;
 
-                columns.insert(name.to_string(), Value::String(val.to_string(eui48::MacAddressFormat::HexString)));
-            },
+                columns.insert(
+                    name.to_string(),
+                    Value::String(val.to_string(eui48::MacAddressFormat::HexString)),
+                );
+            }
             "json" | "jsonb" => {
                 let val: Value = row.try_get(i)?;
 
                 columns.insert(name.to_string(), val);
-            },
+            }
             _ => error!("Column type not supported: column={}", name),
         }
     }
@@ -173,216 +178,222 @@ fn from_row(row: &Row) -> Result<PgqlRow, Error> {
 /// Except for bool, some scalar types, a json string can be any postgres types. So when we get a
 /// json string, we are going to try to convert to one by one.
 macro_rules! bind_param {
-    ($params:expr, $p:expr, $result:expr) => {
-        {
+    ($params:expr, $p:expr, $result:expr) => {{
+        match &$p.value {
+            Value::Bool(b) => $params.push(Box::new(b)),
+            Value::String(s) => {
+                match $p.pg_type.to_lowercase().as_str() {
+                    "bool" => {
+                        let val = match s.parse::<bool>() {
+                            Ok(v) => Some(v),
+                            Err(_) => None,
+                        };
 
-            match &$p.value {
-                Value::Bool(b) => $params.push(Box::new(b)),
-                Value::String(s) => {
-                    match $p.pg_type.to_lowercase().as_str() {
-                        "bool" => {
-                            let val = match s.parse::<bool>() {
-                                Ok(v) => Some(v),
-                                Err(_) => None,
-                            };
-
-                            $params.push(Box::new(val));
-                        },
-                        "char" => {
-                            let val = match s.parse::<i8>() {
-                                Ok(v) => Some(v),
-                                Err(_) => None,
-                            };
-
-                            $params.push(Box::new(val));
-                        },
-                        "int" | "serial" | "int4" => {
-                            let val = match s.parse::<i32>() {
-                                Ok(v) => Some(v),
-                                Err(_) => None,
-                            };
-
-                            $params.push(Box::new(val));
-                        },
-                        "smallint" | "smallserial" | "int2" => {
-                            let val = match s.parse::<i16>() {
-                                Ok(v) => Some(v),
-                                Err(_) => None,
-                            };
-
-                            $params.push(Box::new(val));
-                        },
-                        "bigint" | "bigserial" | "int8" => {
-                            let val = match s.parse::<i64>() {
-                                Ok(v) => Some(v),
-                                Err(_) => None,
-                            };
-
-                            $params.push(Box::new(val));
-                        },
-                        "double precision" | "float8" | "real" | "float4" => {
-                            let val = match s.parse::<f64>() {
-                                Ok(v) => Some(v),
-                                Err(_) => None,
-                            };
-
-                            $params.push(Box::new(val));
-                        },
-                        "varchar" | "char(n)" | "text" | "name" => {
-                            let val = match s.parse::<String>() {
-                                Ok(v) => Some(v),
-                                Err(_) => None,
-                            };
-
-                            $params.push(Box::new(val));
-                        },
-                        "timestamptz" => {
-                            let val = match s.parse::<DateTime<Utc>>() {
-                                Ok(v) => Some(v),
-                                Err(_) => None,
-                            };
-
-                            $params.push(Box::new(val));
-                        },
-                        "timestamp" => {
-                            let val = match s.parse::<NaiveDateTime>() {
-                                Ok(v) => Some(v),
-                                Err(_) => None,
-                            };
-
-                            $params.push(Box::new(val));
-                        },
-                        "date" => {
-                            let val = match s.parse::<NaiveDate>() {
-                                Ok(v) => Some(v),
-                                Err(_) => None,
-                            };
-
-                            $params.push(Box::new(val));
-                        },
-                        "time" => {
-                            let val = match s.parse::<NaiveTime>() {
-                                Ok(v) => Some(v),
-                                Err(_) => None,
-                            };
-
-                            $params.push(Box::new(val));
-                        },
-                        "uuid" => {
-                            let val = match s.parse::<uuid::Uuid>() {
-                                Ok(v) => Some(v),
-                                Err(_) => None,
-                            };
-
-                            $params.push(Box::new(val));
-                        },
-                        //"inet" | "cidr" => {
-                            //let val: ipnetwork::IpNetwork = row.try_get(i)?;
-
-                            //columns.insert(name.to_string(), Value::String(val.to_string()));
-                        //},
-                        "macaddr" => {
-                            let val = match s.parse::<eui48::MacAddress>() {
-                                Ok(v) => Some(v),
-                                Err(_) => None,
-                            };
-
-                            $params.push(Box::new(val));
-                        },
-                        "json" | "jsonb" => {
-                            let val = match serde_json::from_str::<Value>(s) {
-                                Ok(v) => Some(v),
-                                Err(_) => None,
-                            };
-
-                            $params.push(Box::new(val));
-                        },
-                        _ => {
-                            $params.push(Box::new(s));
-                        },
+                        $params.push(Box::new(val));
                     }
-                },
-                Value::Number(n) => {
-                    if n.is_f64() {
-                        $params.push(Box::new(n.as_f64()));
-                    } else {
-                        $params.push(Box::new(n.as_i64()));
-                    }
-                },
-                Value::Null => {
-                    match $p.pg_type.to_lowercase().as_str() {
-                        "bool" => {
-                            let val: Option<bool> = None;
-                            $params.push(Box::new(val));
-                        },
-                        "char" => {
-                            let val: Option<i8> = None;
-                            $params.push(Box::new(val));
-                        },
-                        "int" | "serial" | "int4" => {
-                            let val: Option<i32> = None;
-                            $params.push(Box::new(val));
-                        },
-                        "smallint" | "smallserial" | "int2" => {
-                            let val: Option<i16> = None;
-                            $params.push(Box::new(val));
-                        },
-                        "bigint" | "bigserial" | "int8" => {
-                            let val: Option<i64> = None;
-                            $params.push(Box::new(val));
-                        },
-                        "double precision" | "float8" | "real" | "float4" => {
-                            let val: Option<f64> = None;
-                            $params.push(Box::new(val));
-                        },
-                        "varchar" | "char(n)" | "text" | "name" => {
-                            let val: Option<String> = None;
-                            $params.push(Box::new(val));
-                        },
-                        "timestamptz" => {
-                            let val: Option<DateTime<Utc>> = None;
-                            $params.push(Box::new(val));
-                        },
-                        "timestamp" => {
-                            let val: Option<NaiveDateTime> = None;
-                            $params.push(Box::new(val));
-                        },
-                        "date" => {
-                            let val: Option<NaiveDate> = None;
-                            $params.push(Box::new(val));
-                        },
-                        "time" => {
-                            let val: Option<NaiveTime> = None;
-                            $params.push(Box::new(val));
-                        },
-                        "uuid" => {
-                            let val: Option<uuid::Uuid> = None;
-                            $params.push(Box::new(val));
-                        },
-                        //"inet" | "cidr" => {
-                            //let val: ipnetwork::IpNetwork = row.try_get(i)?;
+                    "char" => {
+                        let val = match s.parse::<i8>() {
+                            Ok(v) => Some(v),
+                            Err(_) => None,
+                        };
 
-                            //columns.insert(name.to_string(), Value::String(val.to_string()));
-                        //},
-                        "macaddr" => {
-                            let val: Option<eui48::MacAddress> = None;
-                            $params.push(Box::new(val));
-                        },
-                        "json" | "jsonb" => {
-                            let val: Option<String> = None;
-                            $params.push(Box::new(val));
-                        },
-                        _ => {
-                            return_plugin_exec_result_err!($result, format!("Postgres param's type {} not supported for Null value", $p.pg_type));
-                        },
+                        $params.push(Box::new(val));
                     }
-                },
-                _ => {
-                    return_plugin_exec_result_err!($result, "Postgres param value's type not supported".to_string());
-                },
-            };
-        }
-    }
+                    "int" | "serial" | "int4" => {
+                        let val = match s.parse::<i32>() {
+                            Ok(v) => Some(v),
+                            Err(_) => None,
+                        };
+
+                        $params.push(Box::new(val));
+                    }
+                    "smallint" | "smallserial" | "int2" => {
+                        let val = match s.parse::<i16>() {
+                            Ok(v) => Some(v),
+                            Err(_) => None,
+                        };
+
+                        $params.push(Box::new(val));
+                    }
+                    "bigint" | "bigserial" | "int8" => {
+                        let val = match s.parse::<i64>() {
+                            Ok(v) => Some(v),
+                            Err(_) => None,
+                        };
+
+                        $params.push(Box::new(val));
+                    }
+                    "double precision" | "float8" | "real" | "float4" => {
+                        let val = match s.parse::<f64>() {
+                            Ok(v) => Some(v),
+                            Err(_) => None,
+                        };
+
+                        $params.push(Box::new(val));
+                    }
+                    "varchar" | "char(n)" | "text" | "name" => {
+                        let val = match s.parse::<String>() {
+                            Ok(v) => Some(v),
+                            Err(_) => None,
+                        };
+
+                        $params.push(Box::new(val));
+                    }
+                    "timestamptz" => {
+                        let val = match s.parse::<DateTime<Utc>>() {
+                            Ok(v) => Some(v),
+                            Err(_) => None,
+                        };
+
+                        $params.push(Box::new(val));
+                    }
+                    "timestamp" => {
+                        let val = match s.parse::<NaiveDateTime>() {
+                            Ok(v) => Some(v),
+                            Err(_) => None,
+                        };
+
+                        $params.push(Box::new(val));
+                    }
+                    "date" => {
+                        let val = match s.parse::<NaiveDate>() {
+                            Ok(v) => Some(v),
+                            Err(_) => None,
+                        };
+
+                        $params.push(Box::new(val));
+                    }
+                    "time" => {
+                        let val = match s.parse::<NaiveTime>() {
+                            Ok(v) => Some(v),
+                            Err(_) => None,
+                        };
+
+                        $params.push(Box::new(val));
+                    }
+                    "uuid" => {
+                        let val = match s.parse::<uuid::Uuid>() {
+                            Ok(v) => Some(v),
+                            Err(_) => None,
+                        };
+
+                        $params.push(Box::new(val));
+                    }
+                    //"inet" | "cidr" => {
+                    //let val: ipnetwork::IpNetwork = row.try_get(i)?;
+
+                    //columns.insert(name.to_string(), Value::String(val.to_string()));
+                    //},
+                    "macaddr" => {
+                        let val = match s.parse::<eui48::MacAddress>() {
+                            Ok(v) => Some(v),
+                            Err(_) => None,
+                        };
+
+                        $params.push(Box::new(val));
+                    }
+                    "json" | "jsonb" => {
+                        let val = match serde_json::from_str::<Value>(s) {
+                            Ok(v) => Some(v),
+                            Err(_) => None,
+                        };
+
+                        $params.push(Box::new(val));
+                    }
+                    _ => {
+                        $params.push(Box::new(s));
+                    }
+                }
+            }
+            Value::Number(n) => {
+                if n.is_f64() {
+                    $params.push(Box::new(n.as_f64()));
+                } else {
+                    $params.push(Box::new(n.as_i64()));
+                }
+            }
+            Value::Null => {
+                match $p.pg_type.to_lowercase().as_str() {
+                    "bool" => {
+                        let val: Option<bool> = None;
+                        $params.push(Box::new(val));
+                    }
+                    "char" => {
+                        let val: Option<i8> = None;
+                        $params.push(Box::new(val));
+                    }
+                    "int" | "serial" | "int4" => {
+                        let val: Option<i32> = None;
+                        $params.push(Box::new(val));
+                    }
+                    "smallint" | "smallserial" | "int2" => {
+                        let val: Option<i16> = None;
+                        $params.push(Box::new(val));
+                    }
+                    "bigint" | "bigserial" | "int8" => {
+                        let val: Option<i64> = None;
+                        $params.push(Box::new(val));
+                    }
+                    "double precision" | "float8" | "real" | "float4" => {
+                        let val: Option<f64> = None;
+                        $params.push(Box::new(val));
+                    }
+                    "varchar" | "char(n)" | "text" | "name" => {
+                        let val: Option<String> = None;
+                        $params.push(Box::new(val));
+                    }
+                    "timestamptz" => {
+                        let val: Option<DateTime<Utc>> = None;
+                        $params.push(Box::new(val));
+                    }
+                    "timestamp" => {
+                        let val: Option<NaiveDateTime> = None;
+                        $params.push(Box::new(val));
+                    }
+                    "date" => {
+                        let val: Option<NaiveDate> = None;
+                        $params.push(Box::new(val));
+                    }
+                    "time" => {
+                        let val: Option<NaiveTime> = None;
+                        $params.push(Box::new(val));
+                    }
+                    "uuid" => {
+                        let val: Option<uuid::Uuid> = None;
+                        $params.push(Box::new(val));
+                    }
+                    //"inet" | "cidr" => {
+                    //let val: ipnetwork::IpNetwork = row.try_get(i)?;
+
+                    //columns.insert(name.to_string(), Value::String(val.to_string()));
+                    //},
+                    "macaddr" => {
+                        let val: Option<eui48::MacAddress> = None;
+                        $params.push(Box::new(val));
+                    }
+                    "json" | "jsonb" => {
+                        let val: Option<String> = None;
+                        $params.push(Box::new(val));
+                    }
+                    _ => {
+                        return_plugin_exec_result_err!(
+                            $result,
+                            format!(
+                                "Postgres param's type {} not supported for Null value",
+                                $p.pg_type
+                            )
+                        );
+                    }
+                }
+            }
+            _ => {
+                return_plugin_exec_result_err!(
+                    $result,
+                    "Postgres param value's type not supported".to_string()
+                );
+            }
+        };
+    }};
 }
 
 #[async_trait]
@@ -409,32 +420,35 @@ impl Plugin for TokioPgql {
 
     fn validate_params(&mut self, params: Map<String, Value>) -> Result<()> {
         let jops_params = JsonOps::new(Value::Object(params));
+        let mut default = TokioPgql::default();
 
         // Check URL
         match jops_params.get_value_e::<String>("conn_str") {
-            Ok(s) => self.conn_str = s,
+            Ok(s) => default.conn_str = s,
             Err(e) => {
                 return Err(anyhow!(e));
-            },
+            }
         };
 
         // Check statements (optional)
         match jops_params.get_value_e::<Vec<Stmt>>("stmts") {
-            Ok(stmts) => self.stmts = stmts,
+            Ok(stmts) => default.stmts = stmts,
             Err(e) => {
                 return Err(anyhow!(e));
-            },
+            }
         };
 
         match jops_params.get_value_e::<bool>("pp_stmt_enabled") {
-            Ok(v) => self.pp_stmt_enabled = v,
-            Err(_) => self.pp_stmt_enabled = true,
+            Ok(v) => default.pp_stmt_enabled = v,
+            Err(_) => default.pp_stmt_enabled = true,
         };
 
         match jops_params.get_value_e::<TlsConfig>("tls") {
-            Ok(v) => self.tls = Some(v),
+            Ok(v) => default.tls = Some(v),
             Err(_) => (),
         };
+
+        *self = default;
 
         Ok(())
     }
@@ -454,8 +468,13 @@ impl Plugin for TokioPgql {
     /// In the "execute" statement, the parameter "fetch" is ignored.
     ///
     /// If any error occured, the function will stop, rollback all operations and return.
-    async fn func(&self, _sender: Option<String>, _rx: &Vec<Sender<FlowMessage>>, _tx: &Vec<Receiver<FlowMessage>>) -> PluginExecResult {
-       let _ =  env_logger::try_init();
+    async fn func(
+        &self,
+        _sender: Option<String>,
+        _rx: &Vec<Sender<FlowMessage>>,
+        _tx: &Vec<Receiver<FlowMessage>>,
+    ) -> PluginExecResult {
+        let _ = env_logger::try_init();
 
         let rt = Runtime::new().unwrap();
 
@@ -480,7 +499,8 @@ impl Plugin for TokioPgql {
                     }
 
                     if let Some(client_key) = tls.client_key {
-                        if let Err(e) = builder.set_private_key_file(&client_key, SslFiletype::PEM) {
+                        if let Err(e) = builder.set_private_key_file(&client_key, SslFiletype::PEM)
+                        {
                             return_plugin_exec_result_err!(result, e.to_string());
                         }
                     }
@@ -501,53 +521,57 @@ impl Plugin for TokioPgql {
                             });
 
                             cli
-                        },
+                        }
                         Err(e) => {
-                           return_plugin_exec_result_err!(result, e.to_string());
-                        },
-                    }
-                },
-                None => {
-                    match tokio_postgres::connect(&self.conn_str, NoTls).await {
-                        Ok((cli, conn)) => {
-                            rt.spawn(async move {
-                                if let Err(e) = conn.await {
-                                    error!("connection error: {}", e);
-                                }
-                            });
-
-                            cli
-                        },
-                        Err(e) => {
-                           return_plugin_exec_result_err!(result, e.to_string());
-                        },
+                            return_plugin_exec_result_err!(result, e.to_string());
+                        }
                     }
                 }
+                None => match tokio_postgres::connect(&self.conn_str, NoTls).await {
+                    Ok((cli, conn)) => {
+                        rt.spawn(async move {
+                            if let Err(e) = conn.await {
+                                error!("connection error: {}", e);
+                            }
+                        });
+
+                        cli
+                    }
+                    Err(e) => {
+                        return_plugin_exec_result_err!(result, e.to_string());
+                    }
+                },
             };
             //// Connect to the database.
             //let mut client = match tokio_postgres::connect(&self.conn_str, NoTls).await {
-                //Ok((cli, conn)) => {
-                    //rt.spawn(async move {
-                        //if let Err(e) = conn.await {
-                            //error!("connection error: {}", e);
-                        //}
-                    //});
+            //Ok((cli, conn)) => {
+            //rt.spawn(async move {
+            //if let Err(e) = conn.await {
+            //error!("connection error: {}", e);
+            //}
+            //});
 
-                    //cli
-                //},
-                //Err(e) => {
-                    //return_plugin_exec_result_err!(result, e.to_string());
-                //},
+            //cli
+            //},
+            //Err(e) => {
+            //return_plugin_exec_result_err!(result, e.to_string());
+            //},
             //};
 
             let transaction = match client.transaction().await {
                 Ok(tx) => tx,
-                Err(e) => { return_plugin_exec_result_err!(result, e.to_string()); },
+                Err(e) => {
+                    return_plugin_exec_result_err!(result, e.to_string());
+                }
             };
 
             for (idx, st) in self.stmts.iter().enumerate() {
                 let mut cond = st.cond.clone().unwrap_or("true".to_string());
-                cond = if cond.is_empty() { "true".to_string() } else { cond };
+                cond = if cond.is_empty() {
+                    "true".to_string()
+                } else {
+                    cond
+                };
 
                 if eval_boolean(cond.as_str()).unwrap_or(false) {
                     let stmt = st.stmt.as_str();
@@ -585,30 +609,38 @@ impl Plugin for TokioPgql {
                         // cf. https://github.com/sfackler/rust-postgres/issues/840
                         let rs = match pp_stmt {
                             Some(ppst) => {
-                               match transaction.query_raw(&ppst, params.iter().map(|p| p.as_ref())).await {
-                                        Ok(rs) => rs,
-                                        Err(e) => {
-                                            let _ = transaction.rollback();
-                                            return_plugin_exec_result_err!(result, e.to_string());
-                                        },
+                                match transaction
+                                    .query_raw(&ppst, params.iter().map(|p| p.as_ref()))
+                                    .await
+                                {
+                                    Ok(rs) => rs,
+                                    Err(e) => {
+                                        let _ = transaction.rollback();
+                                        return_plugin_exec_result_err!(result, e.to_string());
                                     }
-                            },
+                                }
+                            }
                             None => {
-                                match transaction.query_raw(stmt, params.iter().map(|p| p.as_ref())).await {
-                                        Ok(rs) => rs,
-                                        Err(e) => {
-                                            let _ = transaction.rollback();
-                                            return_plugin_exec_result_err!(result, e.to_string());
-                                        }
+                                match transaction
+                                    .query_raw(stmt, params.iter().map(|p| p.as_ref()))
+                                    .await
+                                {
+                                    Ok(rs) => rs,
+                                    Err(e) => {
+                                        let _ = transaction.rollback();
+                                        return_plugin_exec_result_err!(result, e.to_string());
                                     }
-                            },
+                                }
+                            }
                         };
 
                         pin_mut!(rs);
 
                         let res = match fetch.as_str() {
-                            "one" => {
-                                rs.try_next().await.and_then(|row| {
+                            "one" => rs
+                                .try_next()
+                                .await
+                                .and_then(|row| {
                                     let mut rs: Vec<Value> = Vec::new();
 
                                     if let Some(r) = row {
@@ -620,10 +652,11 @@ impl Plugin for TokioPgql {
 
                                     Ok(rs)
                                 })
-                                .map_err(|e| anyhow!(e))
-                            },
-                            _ => {
-                                rs.try_collect().await.and_then(|rows: Vec<Row>| {
+                                .map_err(|e| anyhow!(e)),
+                            _ => rs
+                                .try_collect()
+                                .await
+                                .and_then(|rows: Vec<Row>| {
                                     let mut rs: Vec<Value> = Vec::new();
 
                                     for r in rows.into_iter() {
@@ -635,44 +668,44 @@ impl Plugin for TokioPgql {
 
                                     Ok(rs)
                                 })
-                                .map_err(|e| anyhow!(e))
-                            }
+                                .map_err(|e| anyhow!(e)),
                         };
 
                         match res {
                             Ok(rows) => {
                                 result.output.insert(idx.to_string(), Value::Array(rows));
-                            },
+                            }
                             Err(e) => {
                                 let _ = transaction.rollback();
                                 return_plugin_exec_result_err!(result, e.to_string());
-                            },
+                            }
                         };
-                    } else { // statement = execute
-                             //
+                    } else {
+                        // statement = execute
+                        //
                         debug!("Executing: stmt='{}', params={:?}", stmt, params);
 
                         let res = match pp_stmt {
-                            Some(ppst) => {
-                                transaction.execute_raw(&ppst, params.iter().map(|p| p.as_ref()))
-                                    .await
-                                    .map_err(|e| anyhow!(e))
-                            },
-                            None => {
-                                transaction.execute_raw(stmt, params.iter().map(|p| p.as_ref()))
-                                    .await
-                                    .map_err(|e| anyhow!(e))
-                            }
+                            Some(ppst) => transaction
+                                .execute_raw(&ppst, params.iter().map(|p| p.as_ref()))
+                                .await
+                                .map_err(|e| anyhow!(e)),
+                            None => transaction
+                                .execute_raw(stmt, params.iter().map(|p| p.as_ref()))
+                                .await
+                                .map_err(|e| anyhow!(e)),
                         };
 
                         match res {
                             Ok(count) => {
-                                result.output.insert(idx.to_string(), Value::Number(Number::from(count)));
-                            },
+                                result
+                                    .output
+                                    .insert(idx.to_string(), Value::Number(Number::from(count)));
+                            }
                             Err(e) => {
                                 let _ = transaction.rollback();
                                 return_plugin_exec_result_err!(result, e.to_string());
-                            },
+                            }
                         };
                     }
                 }
@@ -682,7 +715,6 @@ impl Plugin for TokioPgql {
             result.status = Status::Ok;
 
             result
-
         })
     }
 }
@@ -699,17 +731,14 @@ fn sql_parser(stmt: &str) -> String {
     let cap2 = caps.get(2).map_or("", |m| m.as_str()).to_lowercase();
 
     match cap1.as_str() {
-        "update" |
-        "delete" |
-        "insert" => {
+        "update" | "delete" | "insert" => {
             if cap2.contains("returning") {
                 return "query".to_string();
             }
 
             "execute".to_string()
-        },
-        "drop" |
-        "create" => "execute".to_string(),
+        }
+        "drop" | "create" => "execute".to_string(),
         "select" => "query".to_string(),
         _ => "".to_string(),
     }
@@ -734,15 +763,21 @@ mod tests {
     //use tokio::time::{sleep, Duration};
 
     async fn init_db() {
-        let (client, _connection) = tokio_postgres::connect("postgres://flowrunner:flowrunner@localhost:5432/flowrunner", NoTls)
+        let (client, _connection) = tokio_postgres::connect(
+            "postgres://flowrunner:flowrunner@localhost:5432/flowrunner",
+            NoTls,
+        )
+        .await
+        .unwrap();
+
+        client
+            .execute("DROP TABLE IF EXISTS tokio_pgql_users;", &[])
             .await
             .unwrap();
 
-        client.execute("DROP TABLE IF EXISTS tokio_pgql_users;", &[])
-            .await
-            .unwrap();
-
-        client.execute(r#"
+        client
+            .execute(
+                r#"
 CREATE TABLE IF NOT EXISTS tokio_pgql_users (
     id serial PRIMARY KEY,
     username VARCHAR ( 50 ) UNIQUE NOT NULL,
@@ -750,7 +785,9 @@ CREATE TABLE IF NOT EXISTS tokio_pgql_users (
     enabled boolean,
     age integer,
     created_at timestamp with time zone DEFAULT now()
-  );"#, &[])
+  );"#,
+                &[],
+            )
             .await
             .unwrap();
     }
@@ -853,7 +890,10 @@ CREATE TABLE IF NOT EXISTS tokio_pgql_users (
 
         // Check rollback when an error occured
         let (client, _connection) = tokio_postgres::connect(&pg.conn_str, NoTls).await.unwrap();
-        let res = client.query("SELECT * FROM tokio_pgql_users;", &[]).await.unwrap();
+        let res = client
+            .query("SELECT * FROM tokio_pgql_users;", &[])
+            .await
+            .unwrap();
 
         assert_eq!(0, res.len());
 

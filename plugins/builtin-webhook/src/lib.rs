@@ -3,6 +3,7 @@ use flowrunner::plugin::{Plugin, PluginExecResult, Status};
 use flowrunner::message::Message as FlowMessage;
 use flowrunner::return_plugin_exec_result_err;
 use flowrunner::datastore::store::BoxStore;
+use flowrunner::utils::*;
 
 extern crate json_ops;
 use json_ops::JsonOps;
@@ -23,7 +24,7 @@ use tokio::runtime::Runtime;
 use async_trait::async_trait;
 
 use log::{debug, info, error};
-use tracing::*;
+//use tracing::*;
 
 use axum::Router;
 use axum::routing::*;
@@ -155,6 +156,7 @@ async fn handler(
     debug!("webhook payload received: {:?}", payload);
     // Check hook
     let msg = FlowMessage::JsonWithSender {
+        uuid: generate_uuid(),
         sender: sender.to_string(),
         source: Some(hook),
         value: payload,

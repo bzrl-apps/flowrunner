@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Number, Value};
+use serde_json::{Map, Number, Value, json};
 
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
@@ -9,7 +9,11 @@ use evalexpr::*;
 use log::{info, debug, error, warn};
 
 //use tokio::sync::mpsc::*;
+use tokio::time::{sleep, Duration, timeout};
 use async_channel::*;
+
+use moka::future::Cache;
+use std::sync::{Arc, Mutex};
 
 use crate::datastore::store::{BoxStore, StoreConfig};
 use crate::plugin::{PluginRegistry, Status as PluginStatus};
@@ -27,7 +31,20 @@ macro_rules! job_result {
     }
 }
 
-#[derive(Default, Debug, Serialize, Deserialize, Clone)]
+#[derive(Clone, Serialize, Deserialize, Copy, Debug, PartialEq)]
+pub enum Status {
+    Ko = 0,
+    Ok = 1,
+}
+
+// Implement trait Default for Status
+impl Default for Status {
+    fn default() -> Self {
+        Status::Ok
+    }
+}
+
+#[derive(Default, Serialize, Deserialize, Clone)]
 pub struct Job {
     #[serde(default)]
 	pub name: String,
@@ -37,6 +54,9 @@ pub struct Job {
 	pub r#if: Option<String>,
     #[serde(default)]
 	pub start: Option<Task>,
+
+	#[serde(default)]
+	pub status: Status,
 
     #[serde(default)]
 	pub tasks: Vec<Task>,
@@ -49,7 +69,43 @@ pub struct Job {
     #[serde(skip_serializing, skip_deserializing)]
 	pub rx: Vec<Sender<FlowMessage>>,
     #[serde(skip_serializing, skip_deserializing)]
-	pub tx: Vec<Receiver<FlowMessage>>
+	pub tx: Vec<Receiver<FlowMessage>>,
+
+    // Options to control sequential execution mode
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+    #[serde(default = "default_wait_interval")]
+    pub wait_interval: u64,
+    #[serde(default = "default_wait_timeout")]
+    pub wait_timeout: u64,
+    #[serde(skip_serializing, skip_deserializing)]
+	pub cache: Option<Cache<String, Arc<Mutex<Map<String, Value>>>>>
+}
+
+fn default_wait_interval() -> u64 {
+    3000
+}
+
+fn default_wait_timeout() -> u64 {
+    300000
+}
+
+impl std::fmt::Debug for Job {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Job")
+            .field("name", &self.name)
+            .field("hosts", &self.hosts)
+            .field("if", &self.r#if)
+            .field("start", &self.start)
+            .field("status", &self.status)
+            .field("tasks", &self.tasks)
+            .field("context", &self.context)
+            .field("result", &self.result)
+            .field("rx", &self.rx)
+            .field("tx", &self.tx)
+            //.field("cache", f.debug_map().
+            .finish()
+    }
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -62,8 +118,14 @@ pub struct Task {
     pub plugin: String,
     #[serde(default)]
 	pub params: Map<String, Value>,
+
     #[serde(default)]
 	pub r#loop: Option<Value>,
+    #[serde(default)]
+	pub loop_tempo: Option<u64>,
+
+	#[serde(default)]
+	pub register: Map<String, Value>,
 
     #[serde(default)]
 	pub on_success: String,
@@ -83,7 +145,7 @@ impl PartialEq for Job {
 
 impl Job {
     pub async fn run(&mut self, tasks: Option<&str>, datastore: Option<StoreConfig>) -> Result<()> {
-        info!("JOB RUN STARTED: job: {}, hosts: {}, nb rx: {}, nb tx: {}", self.name, self.hosts, self.rx.len(), self.tx.len());
+        info!("JOB RUN STARTED: job={}, hosts={}, nb_rx={}, nb_tx={}", self.name, self.hosts, self.rx.len(), self.tx.len());
         debug!("Job context: {:?}", self.context);
 
         // Check the name of all tasks indicated in taskflow
@@ -94,47 +156,104 @@ impl Job {
         if !self.tx.is_empty() {
             loop {
                 // Reinit the current keys added when receiving each message
-                debug!("Reinitialize job's result: {}", self.name);
+                debug!("Reinitialize job's status, result & context: job={}, status={:?}", self.name, self.status);
+                self.status = Status::default();
                 self.result.clear();
+                let _ = self.context.remove("msg_id");
+                let _ = self.context.remove("register");
+                let _ = self.context.remove("user_payload");
 
                 match self.tx[0].recv().await {
                     // Add message received as data in job context
                     Ok(msg) => {
-                        match msg {
-                            FlowMessage::JsonWithSender{ sender: s, source: src, value: v } => {
-                                self.context.insert("sender".to_string(), Value::String(s));
-                                self.context.insert("source".to_string(), Value::String(src.unwrap_or_else(|| "".to_string())));
-                                self.context.insert("data".to_string(), v);
+                        let uuid = match msg {
+                            FlowMessage::JsonWithSender{ uuid: id, sender: s, source: src, value: v } => {
+                                let mut msg_id = self.context
+                                    .get("msg_id")
+                                    .and_then(|v| v.as_object())
+                                    .unwrap_or(&Map::new()).to_owned();
+                                msg_id.insert("uuid".to_string(), Value::String(id.clone()));
+                                msg_id.insert("sender".to_string(), Value::String(s));
+                                msg_id.insert("source".to_string(), Value::String(src.unwrap_or_else(|| "".to_string())));
+                                msg_id.insert("data".to_string(), v);
+
+                                self.context.insert("msg_id".to_string(), Value::Object(msg_id));
+
+                                id
                             },
                             _ => {
-                                error!("Message received is not Message::Json type");
+                                error!("Message received is not Message::Json type: job={}", self.name);
                                 continue;
                             },
-                       }
+                       };
+
+                        // Wait for all dependent jobs be executed
+                        if let Err(e) = timeout(Duration::from_millis(self.wait_timeout),
+                                                self.wait_dependend_jobs(&uuid))
+                            .await {
+                            error!("Timeout to wait for dependent jobs getting executed: job={}, timeout={}, err={e}",
+                                   self.name,
+                                   self.wait_timeout);
+                            continue;
+                        }
 
                         // Run certain tasks given in parameter
-                        if !ts.is_empty() {
-                            if let Err(e) = self.run_task_by_task(ts, datastore.clone()).await {
-                                error!("{e}");
-                                continue;
-                            }
+                        let (res, msg_err) = if !ts.is_empty() {
+                            (self.run_task_by_task(ts, datastore.clone()).await,
+                            "failed to run task by task".to_string())
                         } else {
                             // Run complete taskflow by running the first task
-                            if let Err(e) = self.run_all_tasks(self.start.clone(), datastore.clone()).await {
-                                error!("{e}");
-                                continue;
-                            }
+                            (self.run_all_tasks(self.start.clone(), datastore.clone()).await,
+                            "failed to run all tasks".to_string())
+                        };
+
+                        // Cache the result
+                        if let Some(cache) = self.cache.clone() {
+                            let uuid_cloned = uuid.clone();
+                            let name_cloned = self.name.clone();
+                            let status_cloned = self.status;
+                            let result_cloned = self.result.clone();
+                            let mut job_result = cache.get_with(uuid_cloned, async move {
+                                let mut jr = Map::new();
+                                jr.insert(name_cloned, json!({
+                                    "status": status_cloned,
+                                    "result": result_cloned
+                                }));
+                                Arc::new(Mutex::new(jr))
+                            }).await;
+
+                            debug!("Getting current cache value before update: job={}, uuid={}, value={:?}",
+                                   self.name, uuid, job_result.lock().unwrap());
+
+                            job_result.lock().unwrap().insert(self.name.clone(), json!({
+                                "status": self.status,
+                                "result": self.result
+                            }));
+
+                            info!("Updating job results cache: job={}, uuid={}", self.name, uuid);
+                            cache.insert(uuid.clone(), job_result).await;
+
+                            job_result = cache.get(&uuid).unwrap_or(Arc::new(Mutex::new(Map::new())));
+                            debug!("Getting cache value after update: job={}, uuid={}, value={:?}",
+                                   self.name, uuid, job_result.lock().unwrap());
+                        }
+
+                        // If job run encounter errors, zap to next message
+                        if let Err(e) = res {
+                            error!("{}: job={}, err={e}", msg_err, self.name);
+                            continue;
                         }
 
                         for rx1 in self.rx.iter() {
                             let msg = FlowMessage::JsonWithSender {
+                                uuid: uuid.clone(),
                                 sender: self.name.clone(),
                                 source: None,
                                 value: Value::Object(self.result.clone()),
                             };
                             match rx1.send(msg).await {
                                 Ok(()) => (),
-                                Err(e) => error!("{}", e.to_string()),
+                                Err(e) => error!("failed to send job's result: job={}, err={}", self.name, e.to_string()),
                             };
                         }
                     },
@@ -154,6 +273,49 @@ impl Job {
         Ok(())
     }
 
+    async fn wait_dependend_jobs(&mut self, uuid: &String) {
+        // We need to verify if the current job has any dependant jobs and all of
+        // them are already executed.
+        if !self.depends_on.is_empty() {
+            info!("Waiting for depending jobs getting executed...: job={}, depends_on={:?}",
+                    self.name, self.depends_on);
+
+            let mut wait = true;
+            while wait {
+                wait = self.cache.clone()
+                    .and_then(|c| c.get(uuid))
+                    .and_then(|v| {
+                        debug!("Current cache value: job={}, uuid={}, value={:?}",
+                                self.name, uuid, v);
+
+                        let job_results = v.lock().unwrap();
+
+                        let mut unsatisfied = false;
+                        for j in self.depends_on.clone() {
+                            if !(*job_results).contains_key(&j) {
+                                unsatisfied = true
+                            }
+                        }
+
+                        // When all dependent jobs are executed, we need to update context their
+                        // results to be used in the next job's template rendering
+                        if !unsatisfied {
+                            self.context.insert("job_results".to_string(), Value::Object((*job_results).clone()));
+                        }
+
+                        Some(unsatisfied)
+                    })
+                    .unwrap_or(true);
+                info!("Waiting state: job={}, wait={}", self.name, wait);
+
+                if wait {
+                    info!("Start waiting for {}ms...: job={}", self.wait_interval, self.name);
+                    sleep(Duration::from_millis(self.wait_interval)).await;
+                }
+            }
+        }
+    }
+
     async fn run_all_tasks(&mut self, start: Option<Task>, datastore: Option<StoreConfig>) -> Result<()> {
         let mut next_task: Option<Task> = match start {
             Some(task) => Some(task),
@@ -167,7 +329,8 @@ impl Job {
 
         // Execute task
         while let Some(mut t) = next_task.to_owned() {
-            info!("Task executed: name {}, params {:?}", t.name, t.params);
+            info!("Task will be executed: name={}, params={:?}, register={:?}",
+                  t.name, t.params, t.register);
 
             let mut task_result = PluginStatus::Ok;
 
@@ -183,6 +346,8 @@ impl Job {
                 continue;
             }
 
+            debug!("Task's params array: len={}, params={:?}", vec_params.len(), vec_params);
+
             // Init datastore if configured
             let mut bs: Option<BoxStore> = None;
 
@@ -195,6 +360,7 @@ impl Job {
                     let mut vec_res: Vec<Value> = Vec::new();
 
                     for p in vec_params.iter() {
+                        debug!("Treating params array item: p={:?}", p);
                         plugin.validate_params(p.clone())?;
                         plugin.set_datastore(bs.clone());
                         let res = plugin.func(Some(self.name.clone()), &self.rx, &self.tx).await;
@@ -203,21 +369,29 @@ impl Job {
                         info!("Task result: name {}, res: {:?}",  t.name.clone(), res);
 
                         if res.status == PluginStatus::Ko {
-                            // Go the task of Success if specified
-                            next_task = match t.on_failure.len() {
-                                n if n == 0 => None,
-                                _ => self.get_task_by_name(t.on_failure.as_str()),
-                            };
-
                             task_result = PluginStatus::Ko;
-                            break;
+                        }
+
+                        // Check if loop_tempo is set
+                        if let Some(tempo) = t.loop_tempo {
+                            debug!("Waiting for the next execution: tempo={}", tempo);
+                            std::thread::sleep(Duration::from_millis(tempo));
                         }
                     }
 
                     if vec_params.len() == 1 {
                         self.result.insert(t.name.clone(), vec_res[0].clone());
                     } else {
-                        self.result.insert(t.name.clone(), Value::Array(vec_res));
+                        self.result.insert(t.name.clone(), json!({
+                            "status": task_result,
+                            "error": "",
+                            "output": Value::Array(vec_res)
+                        }));
+                    }
+
+                    // Render register if not empty
+                    if !t.register.is_empty() {
+                        self.render_register(&t.register)?;
                     }
                 },
                 None => error!("No plugin found"),
@@ -229,6 +403,14 @@ impl Job {
                     n if n > 0 => self.get_task_by_name(t.on_success.as_str()),
                     _ => None,
                 };
+            } else {
+                // Go the task of Failure if specified
+                next_task = match t.on_failure.len() {
+                    n if n == 0 => None,
+                    _ => self.get_task_by_name(t.on_failure.as_str()),
+                };
+                // Update job's status to Ko when a task failed
+                self.status = Status::Ko;
             }
         }
 
@@ -244,7 +426,8 @@ impl Job {
         for s in tasks.split(',') {
             match self.get_task_by_name(s) {
                 Some(mut t) => {
-                    info!("Task executed: name {}, params {:?}", t.name, t.params);
+                    info!("Task executed: name={}, params={:?}, register={:?}",
+                          t.name, t.params, t.register);
 
                     // If task condition is not satisfied then move to next one
                     let vec_params = self.render_task_template(&mut t)?;
@@ -271,13 +454,27 @@ impl Job {
 
                                 vec_res.push(serde_json::to_value(res.clone())?);
 
+                                // Update job's status to Ko when a task failed
+                                if res.status == PluginStatus::Ko {
+                                    self.status = Status::Ko;
+                                }
+
                                 info!("Task result: name {}, res: {:?}",  t.name.clone(), res);
                             }
 
                             if vec_params.len() == 1 {
                                 self.result.insert(t.name.clone(), vec_res[0].clone());
                             } else {
-                                self.result.insert(t.name.clone(), Value::Array(vec_res));
+                                self.result.insert(t.name.clone(), json!({
+                                    "status": self.status,
+                                    "error": "",
+                                    "output": Value::Array(vec_res)
+                                }));
+                            }
+
+                            // Render register if not empty
+                            if !t.register.is_empty() {
+                                self.render_register(&t.register)?;
                             }
                         },
                         None => error!("No plugin with the name {} found", t.name),
@@ -357,7 +554,7 @@ impl Job {
             let mut params = Map::new();
 
             for (n, v) in task.params.clone().into_iter() {
-                params.insert(n.to_string(), render_param_template(component, &n, &v, &data)?);
+                params.insert(n.to_string(), render_value_template(component, &n, &v, &data)?);
             }
 
             vec_params.push(params);
@@ -374,7 +571,7 @@ impl Job {
                 let mut params = Map::new();
 
                 for (n, v) in task.params.clone().into_iter() {
-                    params.insert(n.to_string(), render_param_template(component, &n, &v, &data)?);
+                    params.insert(n.to_string(), render_value_template(component, &n, &v, &data)?);
                 }
 
                 vec_params.push(params);
@@ -410,6 +607,51 @@ impl Job {
         }
 
         Ok(true)
+    }
+
+    fn render_register(&mut self, reg_vars: &Map<String, Value>) -> Result<()> {
+        let mut data: Map<String, Value> = Map::new();
+
+        let mut vars = self.context
+            .get("register")
+            .and_then(|v| v.as_object())
+            .unwrap_or(&Map::new()).to_owned();
+
+        let msg_id = self.context
+            .get("msg_id")
+            .and_then(|v| v.as_object())
+            .unwrap_or(&Map::new()).to_owned();
+
+        let user_payload = self.context
+            .get("user_payload")
+            .and_then(|v| v.as_object())
+            .unwrap_or(&Map::new()).to_owned();
+
+        data.insert("result".to_string(), Value::Object(self.result.clone()));
+        data.insert("msg_id".to_string(), Value::Object(msg_id));
+        data.insert("user_payload".to_string(), Value::Object(user_payload));
+
+        expand_env_map(&mut data);
+
+        for (k, v) in reg_vars.clone().into_iter() {
+            let val = render_value_template("register", &k, &v, &data)
+                .and_then(|v| {
+                    match v.as_str() {
+                        Some(v) => match serde_json::from_str(v) {
+                            Ok(v1) => Ok(v1),
+                            Err(_) => Ok(Value::String(v.to_string()))
+                        },
+                        None => Ok(v),
+                    }
+                })?;
+
+
+            vars.insert(k.to_string(), val);
+        }
+
+        self.context.insert("register".to_string(), Value::Object(vars));
+
+        Ok(())
     }
 
 }

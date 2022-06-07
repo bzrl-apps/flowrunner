@@ -2,6 +2,7 @@ extern crate flowrunner;
 use flowrunner::plugin::{Plugin, PluginExecResult, Status};
 use flowrunner::message::Message as FlowMessage;
 use flowrunner::datastore::store::BoxStore;
+use flowrunner::utils::*;
 
 extern crate json_ops;
 use json_ops::JsonOps;
@@ -199,6 +200,7 @@ async fn run(sender: Option<String>, brokers: Vec<String>, config: Config, rx: &
                         };
 
                         let msg = FlowMessage::JsonWithSender {
+                            uuid: generate_uuid(),
                             sender: sender.clone().unwrap_or_else(|| brokers.join(",")),
                             source: Some(m.topic().to_string()),
                             value,

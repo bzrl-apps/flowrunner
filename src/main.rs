@@ -23,6 +23,7 @@ mod utils;
 mod datastore;
 mod server;
 mod tera;
+mod cron;
 
 #[tokio::main]
 async fn main() {
@@ -64,6 +65,9 @@ async fn main() {
                                     .long("--host-addr")
                                     .takes_value(true)
                                     .help("IP address & port")))
+                        .subcommand(
+                            App::new("cron")
+                                .about("Launch a cron server to execute scheduled classic flows"))
                         .get_matches();
 
     env_logger::init();
@@ -101,6 +105,12 @@ async fn main() {
         },
         ("server", Some(server_matches)) => {
             match server::server_run(&config, server_matches).await {
+                Ok(()) => (),
+                Err(e) => { error!("{}", e.to_string()); },
+            }
+        },
+        ("cron", _) => {
+            match cron::cron_run(&config).await {
                 Ok(()) => (),
                 Err(e) => { error!("{}", e.to_string()); },
             }

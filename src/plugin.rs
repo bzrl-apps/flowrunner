@@ -106,13 +106,9 @@ impl Default for Status {
     }
 }
 
-impl Status {
-    fn ko() -> Self { Status::Ko }
-}
-
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct PluginExecResult {
-    #[serde(default = "Status::ko")]
+    #[serde(default)]
 	pub status: Status,
     #[serde(default)]
     pub error: String,
