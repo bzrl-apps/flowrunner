@@ -58,7 +58,7 @@ bindgen = "0.59"
 clap = "2.33.3"
 
 # async/await
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1.19", features = ["full"] }
 async-trait = "0.1"
 async-channel = "1"
 futures = "0.3"
