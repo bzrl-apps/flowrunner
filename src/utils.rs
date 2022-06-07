@@ -1,5 +1,5 @@
 use serde_json::value::Value as jsonValue;
-use serde_json::{Number, Map, Value};
+use serde_json::{Map, Number, Value};
 use serde_yaml::Value as yamlValue;
 
 use anyhow::{anyhow, Result};
@@ -7,7 +7,7 @@ use anyhow::{anyhow, Result};
 use log::*;
 
 use envmnt::{ExpandOptions, ExpansionType};
-use tera::{Tera, Context};
+use tera::{Context, Tera};
 
 use uuid::Uuid;
 
@@ -17,15 +17,29 @@ pub fn convert_value_yaml_to_json(v: &yamlValue) -> Result<jsonValue> {
     let mut val = jsonValue::Null;
 
     if v.is_bool() {
-        val = jsonValue::Bool(v.as_bool().ok_or_else(|| anyhow!("cannot convert to bool"))?);
+        val = jsonValue::Bool(
+            v.as_bool()
+                .ok_or_else(|| anyhow!("cannot convert to bool"))?,
+        );
     } else if v.is_f64() {
-        val = jsonValue::Number(Number::from_f64(v.as_f64().ok_or_else(|| anyhow!("cannot convert to f64"))?).ok_or_else(|| anyhow!("cannot convert from f64"))?);
+        val = jsonValue::Number(
+            Number::from_f64(v.as_f64().ok_or_else(|| anyhow!("cannot convert to f64"))?)
+                .ok_or_else(|| anyhow!("cannot convert from f64"))?,
+        );
     } else if v.is_u64() {
-        val = jsonValue::Number(Number::from(v.as_u64().ok_or_else(|| anyhow!("cannot convert to u64"))?));
+        val = jsonValue::Number(Number::from(
+            v.as_u64().ok_or_else(|| anyhow!("cannot convert to u64"))?,
+        ));
     } else if v.is_i64() {
-        val = jsonValue::Number(Number::from(v.as_i64().ok_or_else(|| anyhow!("cannot convert to i64"))?));
+        val = jsonValue::Number(Number::from(
+            v.as_i64().ok_or_else(|| anyhow!("cannot convert to i64"))?,
+        ));
     } else if v.is_string() {
-        val = jsonValue::String(v.as_str().ok_or_else(|| anyhow!("cannot convert to string"))?.to_string());
+        val = jsonValue::String(
+            v.as_str()
+                .ok_or_else(|| anyhow!("cannot convert to string"))?
+                .to_string(),
+        );
     } else if v.is_sequence() {
         // recursive
         if let Some(seq) = v.as_sequence() {
@@ -43,7 +57,13 @@ pub fn convert_value_yaml_to_json(v: &yamlValue) -> Result<jsonValue> {
 
             for (k, v) in map.into_iter() {
                 //let key = convert_value_yaml_to_json(k)?.as_str().ok_or(anyhow!("key cannot convert to json string"))?;
-                object.insert(convert_value_yaml_to_json(k)?.as_str().ok_or_else(|| anyhow!("key cannot convert to json string"))?.to_string(), convert_value_yaml_to_json(v)?);
+                object.insert(
+                    convert_value_yaml_to_json(k)?
+                        .as_str()
+                        .ok_or_else(|| anyhow!("key cannot convert to json string"))?
+                        .to_string(),
+                    convert_value_yaml_to_json(v)?,
+                );
             }
 
             val = jsonValue::Object(object);
@@ -72,7 +92,7 @@ pub fn expand_env_value(value: &Value) -> Value {
             }
 
             Value::Array(v)
-        },
+        }
         Value::Object(map) => {
             let mut m: Map<String, Value> = Map::new();
             for (k, v) in map.into_iter() {
@@ -81,18 +101,22 @@ pub fn expand_env_value(value: &Value) -> Value {
             }
 
             Value::Object(m)
-        },
-        Value::Null |
-        Value::Bool(_) |
-        Value::Number(_) => value.to_owned(),
-        Value::String(s) => {
-            Value::String(envmnt::expand(s, Some(options)))
         }
+        Value::Null | Value::Bool(_) | Value::Number(_) => value.to_owned(),
+        Value::String(s) => Value::String(envmnt::expand(s, Some(options))),
     }
 }
 
-pub fn render_value_template(component: &str, key: &str, value: &Value, data: &Map<String, Value>) -> Result<Value> {
-    debug!("Rendering value templating: component {}, key {}, value {:?}, data {:?}", component, key, value, data);
+pub fn render_value_template(
+    component: &str,
+    key: &str,
+    value: &Value,
+    data: &Map<String, Value>,
+) -> Result<Value> {
+    debug!(
+        "Rendering value templating: component {}, key {}, value {:?}, data {:?}",
+        component, key, value, data
+    );
 
     let mut tera = Tera::default();
     tera.register_function("generate_uuid", gen_uuid);
@@ -113,7 +137,7 @@ pub fn render_value_template(component: &str, key: &str, value: &Value, data: &M
             }
 
             Ok(Value::Array(v))
-        },
+        }
         Value::Object(map) => {
             let mut m: Map<String, Value> = Map::new();
             for (k, v) in map.into_iter() {
@@ -122,21 +146,24 @@ pub fn render_value_template(component: &str, key: &str, value: &Value, data: &M
             }
 
             Ok(Value::Object(m))
-        },
-        Value::Null |
-        Value::Bool(_) |
-        Value::Number(_) => Ok(exp_env_v.to_owned()),
-        Value::String(s) => {
-            match tera.render_str(s.as_str(), &context) {
-                Ok(s) => Ok(Value::String(s)),
-                Err(e) => Err(anyhow!(e))
-            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) => Ok(exp_env_v.to_owned()),
+        Value::String(s) => match tera.render_str(s.as_str(), &context) {
+            Ok(s) => Ok(Value::String(s)),
+            Err(e) => Err(anyhow!(e)),
         },
     }
 }
 
-pub fn render_text_template(component: &str, text: &mut String, data: &Map<String, Value>) -> Result<()> {
-    debug!("Rendering text templating: component {}, text {}, data {:?}", component, text, data);
+pub fn render_text_template(
+    component: &str,
+    text: &mut String,
+    data: &Map<String, Value>,
+) -> Result<()> {
+    debug!(
+        "Rendering text templating: component {}, text {}, data {:?}",
+        component, text, data
+    );
 
     let mut tera = Tera::default();
     tera.register_function("generate_uuid", gen_uuid);
@@ -155,15 +182,22 @@ pub fn render_text_template(component: &str, text: &mut String, data: &Map<Strin
         Ok(s) => {
             text.clear();
             text.insert_str(0, s.as_str());
-        },
+        }
         Err(e) => return Err(anyhow!(e)),
     }
 
     Ok(())
 }
 
-pub fn render_loop_template(component: &str, value: &Value, data: &Map<String, Value>) -> Result<Value> {
-    debug!("Rendering loop templating: component {}, value {}, data {:?}", component, value, data);
+pub fn render_loop_template(
+    component: &str,
+    value: &Value,
+    data: &Map<String, Value>,
+) -> Result<Value> {
+    debug!(
+        "Rendering loop templating: component {}, value {}, data {:?}",
+        component, value, data
+    );
 
     let mut tera = Tera::default();
     tera.register_function("generate_uuid", gen_uuid);
@@ -182,7 +216,7 @@ pub fn render_loop_template(component: &str, value: &Value, data: &Map<String, V
                 if let Some(s) = e.as_str() {
                     match tera.render_str(s, &context) {
                         Ok(s1) => v.push(Value::String(s1)),
-                        Err(e) => { return Err(anyhow!(e)) },
+                        Err(e) => return Err(anyhow!(e)),
                     }
                 } else {
                     v.push(e);
@@ -190,22 +224,20 @@ pub fn render_loop_template(component: &str, value: &Value, data: &Map<String, V
             }
 
             Ok(Value::Array(v))
-        },
-        Value::String(s) => {
-            match tera.render_str(s.as_str(), &context) {
-                Ok(s1) => {
-                    let val: Value = serde_json::from_str(s1.as_str())?;
+        }
+        Value::String(s) => match tera.render_str(s.as_str(), &context) {
+            Ok(s1) => {
+                let val: Value = serde_json::from_str(s1.as_str())?;
 
-                    debug!("render_loop_template: s: {:?},  val: {:?}", s1, val);
+                debug!("render_loop_template: s: {:?},  val: {:?}", s1, val);
 
-                    if val.as_array().is_none() {
-                        return Err(anyhow!("Value must be an array"));
-                    }
+                if val.as_array().is_none() {
+                    return Err(anyhow!("Value must be an array"));
+                }
 
-                    Ok(val)
-                },
-                Err(e) => Err(anyhow!(e))
+                Ok(val)
             }
+            Err(e) => Err(anyhow!(e)),
         },
         _ => Err(anyhow!("Loop must be a array of items or template string")),
     }
@@ -230,7 +262,6 @@ mod tests {
         val = yamlValue::Number(serde_yaml::Number::from(12.46));
         assert_eq!(val.as_f64().unwrap(), 12.46);
 
-
         val = yamlValue::Number(serde_yaml::Number::from(1556));
         assert_eq!(val.as_i64().unwrap(), 1556);
         assert_eq!(val.as_u64().unwrap(), 1556);
@@ -241,7 +272,7 @@ mod tests {
 
     #[test]
     fn test_expand_env_map() {
-        let _ =  env_logger::try_init();
+        let _ = env_logger::try_init();
 
         let input = json!({
             "var1": "${VAR1}",
@@ -301,7 +332,7 @@ mod tests {
 
     #[test]
     fn test_render_loop_template() {
-        let _ =  env_logger::try_init();
+        let _ = env_logger::try_init();
 
         let input = json!({
             "var1": "${VAR1}",
@@ -334,18 +365,35 @@ mod tests {
         let mut data = input.as_object().unwrap().to_owned();
         expand_env_map(&mut data);
 
-        let mut result = render_loop_template("test", &Value::String("{{ var2 }}".to_string()), &data).unwrap();
+        let mut result =
+            render_loop_template("test", &Value::String("{{ var2 }}".to_string()), &data).unwrap();
 
         assert_eq!(json!([1, 2, 3]), result);
 
-        result = render_loop_template("test", &Value::String("{{ var3 | json_encode() | safe }}".to_string()), &data).unwrap();
+        result = render_loop_template(
+            "test",
+            &Value::String("{{ var3 | json_encode() | safe }}".to_string()),
+            &data,
+        )
+        .unwrap();
 
         assert_eq!(json!(["var31", "var32", "var33"]), result);
 
-        result = render_loop_template("test", &json!(["{{ var1 }}", "{{ var4['var42'] | as_str }}"]), &data).unwrap();
+        result = render_loop_template(
+            "test",
+            &json!(["{{ var1 }}", "{{ var4['var42'] | as_str }}"]),
+            &data,
+        )
+        .unwrap();
 
         assert_eq!(json!(["var1", "var42"]), result);
 
-        assert_eq!("Value must be an array", render_loop_template("test", &json!("{{ var4 | json_encode() | safe }}"), &data).unwrap_err().to_string().as_str());
+        assert_eq!(
+            "Value must be an array",
+            render_loop_template("test", &json!("{{ var4 | json_encode() | safe }}"), &data)
+                .unwrap_err()
+                .to_string()
+                .as_str()
+        );
     }
 }
